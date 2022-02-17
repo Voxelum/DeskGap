@@ -69,6 +69,7 @@ namespace DeskGap {
 
 #ifdef WIN32
 #include "winrt_webview.hpp"
+#include "webview2_webview.hpp"
 namespace DeskGap {
     class TridentWebView: public WebView {
     private:

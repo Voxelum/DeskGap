@@ -156,7 +156,7 @@ namespace DeskGap {
 
     void BrowserWindow::SetPosition(int x, int y, bool animate) {
         POINT scaledPosition = To96Dpi(impl_->windowWnd, POINT { x, y });
-        // UINT dpi = GetDpiForWindow(impl_->windowWnd);
+        UINT dpi = GetDpiForWindow(impl_->windowWnd);
         // LONG dpiScaledX = MulDiv(x, dpi, 96);
         // LONG dpiScaledY = MulDiv(y, dpi, 96);
         SetWindowPos(

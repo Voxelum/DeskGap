@@ -87,8 +87,7 @@ namespace DeskGap {
                                             "file:///" + this->pathUrl;
                                         std::wstring wpath =
                                             UTF8ToWString(pathUrl.c_str());
-                                        // webviewWindow->Navigate(L"file:///C:/Users/CIJhn/Workspace/DeskGap/build/Debug/DeskGap/resources/app/app.html");
-                                        // webviewWindow->Navigate(wpath.c_str());
+                                        webviewWindow->Navigate(wpath.c_str());
                                     }
 
                                     EventRegistrationToken token;
@@ -99,16 +98,15 @@ namespace DeskGap {
                                                 ICoreWebView2 *sender,
                                                 ICoreWebView2NavigationCompletedEventArgs
                                                     *args) -> HRESULT {
+                                                // make visible
+                                                webviewController
+                                                    ->put_IsVisible(true);
+
                                                 this->callbacks.didFinishLoad();
                                                 return S_OK;
                                             })
                                             .Get(),
                                         &token);
-
-                                    // Schedule an async task to navigate to
-                                    // Bing
-                                    webviewWindow->Navigate(
-                                        L"https://www.bing.com/");
 
                                     // 4 - Navigation events
 

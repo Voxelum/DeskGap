@@ -50,7 +50,8 @@ export interface AppEvents extends IEventMap {
      * @param 0 [[IEventObject]]
      * @param 1 The exit code
      */
-    'quit': [number]}
+    'quit': [number]
+}
 
 /** 
  * Control your application's event lifecycle.
@@ -71,14 +72,15 @@ export class App extends EventEmitter<AppEvents> {
     constructor() {
         super();
 
-        this.whenReady_ = new Promise((resolve) =>{
+        this.whenReady_ = new Promise((resolve) => {
             this.resolveWhenReady_ = resolve;
             this.native_ = appNative;
         });
 
+
     }
 
-    /** @internal */ 
+    /** @internal */
     private run_() {
         this.native_.run({
             onReady: () => {
@@ -95,18 +97,18 @@ export class App extends EventEmitter<AppEvents> {
                     this.resolveWhenReady_();
                 }
             },
-    
+
             //The native land will prevent the quit triggered by user interaction and call this,
             //which actually exits the app by default and can be prevented by event handlers.
             beforeQuit: () => {
                 this.quit();
             }
         });
-        
-        __non_webpack_require__(appPath);
+
+        require(appPath);
     }
 
-    /** @internal */ 
+    /** @internal */
     private notifyWindowAllClosed_() {
         if (this.triggersWindowAllClosed_) {
             if (!this.trigger_('window-all-closed')) {

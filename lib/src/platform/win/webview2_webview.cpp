@@ -13,6 +13,11 @@
 
 #include "./util/wstring_utf8.h"
 
+extern "C" {
+extern char BIN2CODE_DG_PRELOAD_WEBVIEW2_JS_CONTENT[];
+extern int BIN2CODE_DG_PRELOAD_WEBVIEW2_JS_SIZE;
+}
+
 namespace DeskGap {
     bool Webview2Webview::IsAvailable() {
         // WinRTWebView needs WebViewControl#AddInitializeScript, which is a
@@ -27,7 +32,7 @@ namespace DeskGap {
         wil::com_ptr<ICoreWebView2> webviewWindow;
         HWND containerWnd;
         WebView::EventCallbacks callbacks;
-
+        std::wstring preloadScript;
         std::string pathUrl = "";
 
         virtual void SetRect(int x, int y, int width, int height) override {
@@ -91,6 +96,11 @@ namespace DeskGap {
                                     }
 
                                     EventRegistrationToken token;
+                                    // VARIANT remoteObjectAsVariant = {};
+
+                                    // webviewWindow->AddHostObjectToScript(
+                                    //     L"eventForwarder",
+                                    //     &remoteObjectAsVariant);
                                     webviewWindow->add_NavigationCompleted(
                                         Callback<
                                             ICoreWebView2NavigationCompletedEventHandler>(
@@ -107,13 +117,55 @@ namespace DeskGap {
                                             })
                                             .Get(),
                                         &token);
-
                                     // 4 - Navigation events
 
                                     // 5 - Scripting
 
                                     // 6 - Communication between host and web
-                                    // content
+                                    // webviewWindow->add_WebMessageReceived(
+                                    //     Callback<
+                                    //         ICoreWebView2WebMessageReceivedEventHandler>(
+                                    //         [this](
+                                    //             ICoreWebView2 *webview,
+                                    //             ICoreWebView2WebMessageReceivedEventArgs
+                                    //                 *args) -> HRESULT {
+                                    //             PWSTR message;
+                                    //             args->TryGetWebMessageAsString(
+                                    //                 &message);
+                                    //             this->callbacks.onStringMessage(
+                                    //                 WStringToUTF8(message));
+                                    //             CoTaskMemFree(message);
+                                    //             return S_OK;
+                                    //         })
+                                    //         .Get(),
+                                    //     &token);
+
+                                    // webviewWindow->add_DocumentTitleChanged(
+                                    //     Callback<
+                                    //         ICoreWebView2DocumentTitleChangedEventHandler>(
+                                    //         [this](ICoreWebView2 *webview,
+                                    //                IUnknown *args) {
+                                    //             wil::unique_cotaskmem_string
+                                    //                 title;
+                                    //             webview->get_DocumentTitle(
+                                    //                 &title);
+                                    //             this->callbacks
+                                    //                 .onPageTitleUpdated(
+                                    //                     WStringToUTF8(
+                                    //                         title.get()));
+                                    //         })
+                                    //         .Get(),
+                                    //     &token);
+
+                                    // webviewWindow
+                                    //     ->AddScriptToExecuteOnDocumentCreated(
+                                    //         L"window.chrome.webview."
+                                    //         L"addEventListener(\'message\', "
+                                    //         L"event => alert(event.data));"
+                                    //         L"window.chrome.webview."
+                                    //         L"postMessage(window.document.URL)"
+                                    //         L";",
+                                    //         nullptr);
 
                                     return S_OK;
                                 })
@@ -123,8 +175,8 @@ namespace DeskGap {
                     .Get());
         }
 
-        Impl(WebView::EventCallbacks &callbacks)
-            : callbacks(std::move(callbacks)), containerWnd(nullptr) {}
+        Impl(WebView::EventCallbacks &callbacks, std::wstring &preload)
+            : callbacks(std::move(callbacks)), containerWnd(nullptr), preloadScript(std::move(preload)) {}
 
         void
         ExecuteJavaScript(const std::wstring &code,
@@ -153,32 +205,19 @@ namespace DeskGap {
 
     Webview2Webview::Webview2Webview(EventCallbacks &&callbacks,
                                      const std::string &preloadScriptString) {
-        auto impl = std::make_unique<Impl>(callbacks);
+
+        std::string script;
+        script.reserve(BIN2CODE_DG_PRELOAD_WEBVIEW2_JS_SIZE +
+                       preloadScriptString.size());
+        script.assign(BIN2CODE_DG_PRELOAD_WEBVIEW2_JS_CONTENT,
+                      BIN2CODE_DG_PRELOAD_WEBVIEW2_JS_SIZE);
+        script.append(preloadScriptString);
+
+        auto impl = std::make_unique<Impl>(callbacks, UTF8ToWString(script.c_str()));
 
         // impl_ for reference owning, and winrtImpl_ for method calling
         webview2Impl_ = impl.get();
         impl_ = std::move(impl);
-
-        // script.reserve(BIN2CODE_DG_PRELOAD_WINRT_JS_SIZE +
-        // preloadScriptString.size());
-        // script.assign(BIN2CODE_DG_PRELOAD_WINRT_JS_CONTENT,
-        // BIN2CODE_DG_PRELOAD_WINRT_JS_SIZE);
-        // script.append(preloadScriptString);
-        // preloadScript =
-        // std::make_unique<winrt::hstring>(winrt::to_hstring(script));
-
-        // auto winrtImpl = std::make_unique<Impl>(callbacks);
-
-        // impl_ for reference owning, and winrtImpl_ for method calling
-        //  winrtImpl_ = winrtImpl.get();
-        //  impl_ = std::move(winrtImpl);
-
-        // WebViewControlProcessOptions options;
-        // options.PrivateNetworkClientServerCapability(WebViewControlProcessCapabilityState::Enabled);
-        // winrtImpl_->process = WebViewControlProcess(options);
-        // The real creation of WebViewControl happens in
-        // WinRTWebView::Impl::InitWithParent, which is called by BrowserWindow,
-        // because it needs the handle of the window.
     }
 
     void Webview2Webview::LoadLocalFile(const std::string &path) {

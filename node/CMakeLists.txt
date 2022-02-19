@@ -34,24 +34,44 @@ if (NOT DEFINED NPM_EXECUTABLE)
     message(FATAL_ERROR "npm required but not found")
 endif()
 
-set(NPM_WEBPACK ${NPM_EXECUTABLE} --prefix ${CMAKE_CURRENT_LIST_DIR}/.. run webpack --)
+set(NPM_ESBUILD ${NPM_EXECUTABLE} --prefix ${CMAKE_CURRENT_LIST_DIR}/.. run esbuild --)
 
 if("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin")
-    set(NPM_WEBPACK ${CMAKE_COMMAND} -E env "PATH=$ENV{PATH}:/opt/local/bin" ${NPM_WEBPACK})
+    set(NPM_ESBUILD ${CMAKE_COMMAND} -E env "PATH=$ENV{PATH}:/opt/local/bin" ${NPM_ESBUILD})
 endif()
 
 if(WIN32)
-    set(NPM_WEBPACK cmd /c ${NPM_WEBPACK})
+    set(NPM_ESBUILD cmd /c ${NPM_ESBUILD})
 endif()
 add_subdirectory(js)
 
-set(NOD_NODE_VERSION v12.4.0)
+set(NOD_NODE_VERSION v16.14.0)
+if(NOT DEFINED NOD_NODE_OS)
+    if (UNIX)
+        if (APPLE)
+            set(NOD_NODE_OS darwin)
+        else()
+            set(NOD_NODE_OS linux)
+        endif()
+    else()
+        set(NOD_NODE_OS win32)
+    endif()
+endif()
+
+if(NOT DEFINED NOD_NODE_ARCH)
+    if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+        set(NOD_NODE_ARCH x86)
+    else()
+        set(NOD_NODE_ARCH x64)
+    endif()
+endif()
+set(NOD_NODE_CONFIG -smallicu)
+
 FetchContent_Declare(
-    nod
-    GIT_REPOSITORY https://github.com/patr0nus/nod
-    GIT_TAG 4ae80d7e96ca0991c6db857096cd40695f7e1821
+    libnode
+    URL https://github.com/ci010/libnode/releases/download/${NOD_NODE_VERSION}/libnode-${NOD_NODE_VERSION}-${NOD_NODE_OS}-${NOD_NODE_ARCH}${NOD_NODE_CONFIG}.zip
 )
-FetchContent_MakeAvailable(nod)
+FetchContent_MakeAvailable(libnode)
 
 add_executable(DeskGapNode
     src/main.cc
@@ -71,7 +91,7 @@ set_target_properties(
     OUTPUT_NAME DeskGap
     CXX_STANDARD 17
 )
-target_link_libraries(DeskGapNode PUBLIC deskgap nod DeskGapNodeScripts)
+target_link_libraries(DeskGapNode PUBLIC deskgap libnode DeskGapNodeScripts)
 target_include_directories(DeskGapNode PRIVATE ${DG_NODE_MODULES_DIR}/node-addon-api)
 
 if(APPLE)

@@ -22,7 +22,7 @@ const deskgap = {
     shell,
 };
 
-export = deskgap;
+// export = deskgap;
 registerModule(deskgap);
 
 process.on('uncaughtException', (error) => {

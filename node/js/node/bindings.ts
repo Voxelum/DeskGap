@@ -1,3 +1,3 @@
-const bindings = (global as any)._nod_native_mod;
+const bindings = (global as any).__embedder_mod;
 export = bindings;
-delete (global as any)._nod_native_mod;
+delete (global as any).__embedder_mod;

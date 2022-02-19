@@ -37,11 +37,15 @@ add_library(deskgap_platform_trident_preload_script STATIC
 add_library(deskgap_platform_winrt_preload_script STATIC
     ${CMAKE_CURRENT_BINARY_DIR}/dg_preload_winrt.c
 )
+add_library(deskgap_platform_webview2_preload_script STATIC
+    ${CMAKE_CURRENT_BINARY_DIR}/dg_preload_webview2.c
+)
 
 target_link_libraries(deskgap_winrt PRIVATE deskgap_platform_winrt_preload_script)
 
 bin2code(${CMAKE_CURRENT_LIST_DIR}/dg_preload_trident.js ${CMAKE_CURRENT_BINARY_DIR}/dg_preload_trident.c)
 bin2code(${CMAKE_CURRENT_LIST_DIR}/dg_preload_winrt.js ${CMAKE_CURRENT_BINARY_DIR}/dg_preload_winrt.c)
+bin2code(${CMAKE_CURRENT_LIST_DIR}/dg_preload_webview2.js ${CMAKE_CURRENT_BINARY_DIR}/dg_preload_webview2.c)
 
 target_sources(deskgap_platform PRIVATE
     argv.cpp

@@ -67,7 +67,7 @@ namespace DeskGap {
 
                 StorageFile file = co_await StorageFile::GetFileFromPathAsync(winrt::to_hstring(fullPath));
                 Streams::IInputStream stream = co_await file.OpenReadAsync();
-                return stream;
+                co_return stream;
             }
         };
     }

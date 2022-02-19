@@ -1,4 +1,4 @@
-const deskgapVersion = require('raw-loader!../../VERSION').default;
+const deskgapVersion = require('../../VERSION.txt');
 
 const { appNative } = require('./bindings');
 

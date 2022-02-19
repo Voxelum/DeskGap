@@ -69,13 +69,13 @@ namespace DeskGap {
                     std::string(BIN2CODE_ES6_PROMISE_AUTO_MIN_JS_CONTENT, BIN2CODE_ES6_PROMISE_AUTO_MIN_JS_SIZE) +
                     dgPreloadScript;
 
-            this->webview_ = std::make_unique<Webview2Webview>(std::move(eventCallbacks), dgPreloadScript);
-            // if (engine == Engine::WINRT) {
-            //     this->webview_ = std::make_unique<WinRTWebView>(std::move(eventCallbacks), dgPreloadScript);
-            // }
-            // else {
-            //     this->webview_ = std::make_unique<TridentWebView>(std::move(eventCallbacks), dgPreloadScriptWithPromise);
-            // }
+            // this->webview_ = std::make_unique<Webview2Webview>(std::move(eventCallbacks), dgPreloadScript);
+            if (engine == Engine::WINRT) {
+                this->webview_ = std::make_unique<WinRTWebView>(std::move(eventCallbacks), dgPreloadScript);
+            }
+            else {
+                this->webview_ = std::make_unique<TridentWebView>(std::move(eventCallbacks), dgPreloadScriptWithPromise);
+            }
         #else
             this->webview_ = std::make_unique<WebView>(std::move(eventCallbacks), dgPreloadScript);
         #endif

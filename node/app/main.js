@@ -1,4 +1,5 @@
-const { app, BrowserWindow, dialog } = require('deskgap');
+const { app, BrowserWindow, dialog, Tray, Menu } = require('deskgap');
+const { join } = require('path');
 
 app.once('ready', () => {
     const mainWindow = new BrowserWindow({
@@ -14,6 +15,25 @@ app.once('ready', () => {
 
         mainWindow.show();
     });
+
+    const tray = new Tray(join(__dirname, './icon.ico'));
+
+    const menu = Menu.buildFromTemplate([
+        {
+            type: 'normal',
+            label: 'hello'
+        }
+    ]);
+
+    tray.setContextMenu(menu);
+
+    tray.setTooltip('hello world!')
+    tray.on('click', () => {
+        console.log('on clicked!')
+    })
+    tray.on('double-click', () => {
+        console.log('on double clicked!')
+    })
 
     mainWindow.webView.publishServices({
         "dialog": dialog,

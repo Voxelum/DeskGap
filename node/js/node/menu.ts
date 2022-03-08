@@ -24,12 +24,12 @@ const { MenuItemNative, MenuNative } = require('./bindings') as {
 
 export type MenuItemType = 'normal' | 'separator' | 'submenu' | 'checkbox';
 
-/** @internal */ 
+/** @internal */
 const MenuItemTypeCode = {
     normal: 0, separator: 1, submenu: 2, checkbox: 3
 };
 
-/** @internal */ 
+/** @internal */
 type MenuType = 'main' | 'context' | 'submenu';
 
 export const MenuTypeCode = {
@@ -53,12 +53,14 @@ export interface IMenuPopupOptions {
 
 let lastNativeId: number = 0;
 
+export const MenuNativeKey = Symbol('MenuNative')
+
 export class Menu {
     /** @internal */ private natives_ = new Map<number, IMenuNative>();
     public items: MenuItem[] = [];
 
     /** @internal */ private nativeCallbacks_ = {};
-    
+
     append(menuItem: MenuItem) {
         this.items.push(menuItem);
     }
@@ -91,8 +93,8 @@ export class Menu {
                 bulkUISync(() => {
                     this.destroyNative_(nativeId);
                 });
-            });    
-        });        
+            });
+        });
     }
     static setApplicationMenu(menu: Menu | null) {
         throw new Error('This method should have been overridden in the "app" module');
@@ -110,14 +112,14 @@ export class Menu {
         return newMenu;
     }
 
-    /** @internal */ 
-    private createNative_(type: number, window: BrowserWindow | null, theNativeId?: number): [number, IMenuNative] {
+    /** @internal */
+    public createNative_(type: number, window: BrowserWindow | null, theNativeId?: number): [number, IMenuNative] {
         const nativeId = theNativeId || ++lastNativeId;
         //console.log(nativeId);
 
         const native = new MenuNative(type, this.nativeCallbacks_);
         this.natives_.set(nativeId, native);
-        
+
         for (const item of this.items) {
             const nativeMenuItem = item['createNative_'](nativeId, window);
             native.append(nativeMenuItem);
@@ -126,7 +128,7 @@ export class Menu {
         return [nativeId, native];
     }
     /** @internal */
-    private destroyNative_(nativeId: number): void {
+    public destroyNative_(nativeId: number): void {
         for (const item of this.items) {
             item['destroyNative_'](nativeId);
         }
@@ -157,7 +159,7 @@ export class MenuItem {
 
         const fullOptions: MenuItemConstructorOptions = Object.assign({
             label: '',
-            type: (options.submenu != null) ? 'submenu': 'normal',
+            type: (options.submenu != null) ? 'submenu' : 'normal',
             checked: false,
             submenu: null,
             click: null,
@@ -181,9 +183,9 @@ export class MenuItem {
         this.click = fullOptions.click;
         this.checked_ = fullOptions.checked;
         this.accelerator_ = fullOptions.accelerator;
-        this.role_ = fullOptions.role;   
+        this.role_ = fullOptions.role;
     }
-    
+
     get label(): string {
         return this.label_;
     }
@@ -215,8 +217,8 @@ export class MenuItem {
     get accelerator(): string {
         return this.accelerator_;
     }
-    
-    /** @internal */ 
+
+    /** @internal */
     private createNative_(nativeId: number, window: BrowserWindow | null): IMenuItemNative {
 
         let nativeSubmenu: IMenuNative | null = null;

@@ -8,7 +8,8 @@
 
 namespace DeskGap {
     const UINT DG_DISPATCH_MSG = WM_APP + 1;
-    extern HWND dispatchWindowWnd;
+    const UINT DG_TRAY_MSG = WM_APP + 2;
+    extern HWND appWindowWnd;
 }
 
 #endif

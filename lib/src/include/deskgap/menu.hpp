@@ -38,6 +38,7 @@ namespace DeskGap {
     private:
         friend class MenuItem;
         friend class BrowserWindow;
+        friend class Tray;
         friend class App;
         struct Impl;
         std::unique_ptr<Impl> impl_;
@@ -48,7 +49,7 @@ namespace DeskGap {
         Menu(const Menu&) = delete;
         Menu(const Type&);
         void AppendItem(const MenuItem& menuItem);
-        
+
         ~Menu();
     };
 }

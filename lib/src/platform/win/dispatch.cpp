@@ -7,7 +7,7 @@
 void DeskGap::DispatchAsync(std::function<void()>&& action) {
 
     PostMessageW(
-        dispatchWindowWnd,
+        appWindowWnd,
         DG_DISPATCH_MSG, 0,
         reinterpret_cast<LPARAM>(new std::function<void()>([
             action { std::move(action) }

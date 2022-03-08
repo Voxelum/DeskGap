@@ -80,6 +80,7 @@ add_executable(DeskGapNode
     src/node_bindings/dispatch/ui_dispatch.cc
     src/node_bindings/app/app_wrap.cc
     src/node_bindings/dialog/dialog_wrap.cc
+    src/node_bindings/tray/tray_wrap.cc
     src/node_bindings/menu/menu_wrap.cc
     src/node_bindings/shell/shell_wrap.cc
     src/node_bindings/system_preferences/system_preferences_wrap.cc

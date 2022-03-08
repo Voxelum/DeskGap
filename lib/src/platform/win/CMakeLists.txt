@@ -61,6 +61,7 @@ target_sources(deskgap_platform PRIVATE
     exception.cpp
     BrowserWindow.cpp
     delay_load_hook.cpp
+    tray.cpp
     util/dpi.cpp
     util/winrt.cpp
 )

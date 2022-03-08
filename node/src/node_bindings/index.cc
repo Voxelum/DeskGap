@@ -6,6 +6,7 @@
 #include "window/browser_window_wrap.h"
 #include "menu/menu_wrap.h"
 #include "shell/shell_wrap.h"
+#include "tray/tray_wrap.h"
 #include "webview/webview_wrap.h"
 #include "system_preferences/system_preferences_wrap.h"
 #include "dialog/dialog_wrap.h"
@@ -27,6 +28,7 @@ Napi::Object DeskGap::InitNodeNativeModule(Napi::Env env, Napi::Object exports) 
     ExportFunction(exports, DeskGap::MenuWrap::Constructor(env));
     ExportFunction(exports, DeskGap::MenuItemWrap::Constructor(env));
     ExportFunction(exports, DeskGap::WebViewWrap::Constructor(env));
+    ExportFunction(exports, DeskGap::TrayWrap::Constructor(env));
 
     ExportFunction(exports, Napi::Function::New(env, [](const Napi::CallbackInfo&) {
         DeskGap::DelayUISync();

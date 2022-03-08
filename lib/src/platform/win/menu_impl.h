@@ -32,12 +32,14 @@ namespace DeskGap {
     
     struct Menu::Impl {
         Type type;
+        HWND windowWnd;
         
         std::vector<std::function<void()>*> clickHandlers;
         std::vector<const MenuItem*> items;
         void SetWindowWnd(HWND windowWnd);
         HMENU hmenu;
     };
+
 }
 
 #endif

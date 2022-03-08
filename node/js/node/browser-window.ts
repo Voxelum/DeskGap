@@ -314,6 +314,7 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
     getSize(): [number, number] {
         return this.native_.getSize();
     }
+
     destroy(): void {
         bulkUISync(() => {
             if (this.menuNativeId_ != null) {
@@ -343,6 +344,7 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
             }
         }
     }
+
     isDestroyed(): boolean {
         return this.native_ == null;
     }

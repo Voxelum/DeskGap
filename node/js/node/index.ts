@@ -5,6 +5,7 @@ import { BrowserWindow } from './browser-window';
 import { Menu, MenuItem } from './menu';
 import { WebViews } from './webview';
 import Dialog from './dialog';
+import { Tray } from './tray'
 import shell from './shell';
 import systemPreferences from './system-preferences';
 import { registerModule } from './internal/cjs-intercept';
@@ -18,6 +19,7 @@ const deskgap = {
     MenuItem,
     systemPreferences,
     dialog: Dialog,
+    Tray,
     NativeException,
     shell,
 };

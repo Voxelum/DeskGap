@@ -121,5 +121,4 @@ namespace DeskGap {
         });
     }
     //MenuWrap Implementations End
-
 }

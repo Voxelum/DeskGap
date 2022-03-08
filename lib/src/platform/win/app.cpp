@@ -1,64 +1,67 @@
-#include <cstdlib>
-#include <shlobj_core.h>
-#include <fileapi.h>
-#include "./util/wstring_utf8.h"
-#include <filesystem>
 #include "app.hpp"
-#include "webview_impl.h"
+#include "./util/wstring_utf8.h"
 #include "dispatch_wnd.hpp"
+#include "webview_impl.h"
+#include <cstdlib>
+#include <fileapi.h>
+#include <filesystem>
+#include <shlobj_core.h>
 
 namespace DeskGap {
-    HWND dispatchWindowWnd;
+    HWND appWindowWnd;
+    extern LRESULT OnTrayClick(WPARAM wp, LPARAM lp);
+
     void App::Init() {
         OleInitialize(nullptr);
 
-        const wchar_t* const DispatcherWndClassName = L"DeskGapDispatcherWindow";
+        const wchar_t *const DispatcherWndClassName =
+            L"DeskGapDispatcherWindow";
 
-        WNDCLASSEXW dispatcherWindowClass { };
+        WNDCLASSEXW dispatcherWindowClass{};
         dispatcherWindowClass.cbSize = sizeof(WNDCLASSEXW);
         dispatcherWindowClass.hInstance = GetModuleHandleW(nullptr);
         dispatcherWindowClass.lpszClassName = DispatcherWndClassName;
-        dispatcherWindowClass.lpfnWndProc = [](HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) -> LRESULT {
+        dispatcherWindowClass.lpfnWndProc = [](HWND hwnd, UINT msg, WPARAM wp,
+                                               LPARAM lp) -> LRESULT {
             if (msg == DG_DISPATCH_MSG) {
-                auto action = reinterpret_cast<std::function<void()>*>(lp);
+                // handle dispatch message posted from dispatch.cpp
+                auto action = reinterpret_cast<std::function<void()> *>(lp);
                 (*action)();
                 delete action;
                 return 0;
+            } else if (msg == DG_TRAY_MSG) {
+                return DeskGap::OnTrayClick(wp, lp);
             }
-            else {
-                return DefWindowProcW(hwnd, msg, wp, lp);
-            }
+
+            return DefWindowProcW(hwnd, msg, wp, lp);
         };
         RegisterClassExW(&dispatcherWindowClass);
 
-        dispatchWindowWnd = CreateWindowW(
-                DispatcherWndClassName,
-                L"",
-                0, 0, 0, 0, 0,
-                nullptr, nullptr,
-                GetModuleHandleW(nullptr),
-                nullptr
-        );
+        appWindowWnd =
+            CreateWindowW(DispatcherWndClassName, L"", 0, 0, 0, 0, 0, nullptr,
+                          nullptr, GetModuleHandleW(nullptr), nullptr);
     }
-    void App::Run(EventCallbacks&& callbacks) {
+
+    void App::Run(EventCallbacks &&callbacks) {
         callbacks.onReady();
         MSG msg;
         BOOL res;
         while ((res = GetMessageW(&msg, nullptr, 0, 0)) != -1) {
             if (msg.message == WM_MENUCOMMAND) {
-                MENUINFO info { };
+                MENUINFO info{};
                 info.cbSize = sizeof(info);
                 info.fMask = MIM_MENUDATA;
                 GetMenuInfo((HMENU)msg.lParam, &info);
-                auto clickHandlers = reinterpret_cast<std::vector<std::function<void()>*>*>(info.dwMenuData);
+                auto clickHandlers =
+                    reinterpret_cast<std::vector<std::function<void()> *> *>(
+                        info.dwMenuData);
                 (*((*clickHandlers)[msg.wParam]))();
-            }
-            else if (msg.message == WM_QUIT) {
+            } else if (msg.message == WM_QUIT) {
                 return;
-            }
-            else if (msg.hwnd) {
+            } else if (msg.hwnd) {
                 if (tridentWebViewTranslateMessage != nullptr) {
-                    if (tridentWebViewTranslateMessage(&msg)) continue;
+                    if (tridentWebViewTranslateMessage(&msg))
+                        continue;
                 }
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
@@ -66,30 +69,25 @@ namespace DeskGap {
         }
     }
 
-    void App::Exit(int exitCode) {
-        ExitProcess(static_cast<UINT>(exitCode));
-    }
+    void App::Exit(int exitCode) { ExitProcess(static_cast<UINT>(exitCode)); }
 
     std::string App::GetPath(PathName name) {
-        static std::unordered_map<PathName, KNOWNFOLDERID> folderIdByName {
-            { PathName::APP_DATA,  FOLDERID_RoamingAppData },
-            { PathName::DESKTOP, FOLDERID_Desktop },
-            { PathName::DOCUMENTS, FOLDERID_Documents },
-            { PathName::DOWNLOADS, FOLDERID_Downloads },
-            { PathName::MUSIC, FOLDERID_Music },
-            { PathName::PICTURES, FOLDERID_Pictures },
-            { PathName::VIDEOS, FOLDERID_Videos },
-            { PathName::HOME, FOLDERID_Profile }
-        };
-
+        static std::unordered_map<PathName, KNOWNFOLDERID> folderIdByName{
+            {PathName::APP_DATA, FOLDERID_RoamingAppData},
+            {PathName::DESKTOP, FOLDERID_Desktop},
+            {PathName::DOCUMENTS, FOLDERID_Documents},
+            {PathName::DOWNLOADS, FOLDERID_Downloads},
+            {PathName::MUSIC, FOLDERID_Music},
+            {PathName::PICTURES, FOLDERID_Pictures},
+            {PathName::VIDEOS, FOLDERID_Videos},
+            {PathName::HOME, FOLDERID_Profile}};
 
         if (name == PathName::TEMP) {
             DWORD length = GetTempPathW(0, NULL);
             std::vector<wchar_t> pathBuffer(length);
             GetTempPathW(length, pathBuffer.data());
             return WStringToUTF8(pathBuffer.data());
-        }
-        else {
+        } else {
             KNOWNFOLDERID folderId = folderIdByName[name];
             PWSTR pwPath = NULL;
             SHGetKnownFolderPath(folderId, KF_FLAG_CREATE, NULL, &pwPath);
@@ -99,7 +97,7 @@ namespace DeskGap {
         }
     }
 
-    std::string App::GetResourcePath(const char* argv0) {
+    std::string App::GetResourcePath(const char *argv0) {
         namespace fs = std::filesystem;
         wchar_t pathBuffer[MAX_PATH];
 
@@ -110,4 +108,4 @@ namespace DeskGap {
         return (fs::path(execPath).parent_path() / "resources").string();
     }
 
-}
+} // namespace DeskGap

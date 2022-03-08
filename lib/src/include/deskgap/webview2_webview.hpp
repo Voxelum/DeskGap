@@ -16,7 +16,7 @@ namespace DeskGap {
         struct Impl;
         Impl* webview2Impl_;
     public:
-        static bool IsAvailable();
+        static std::string GetAvailableCoreVersion();
         Webview2Webview(EventCallbacks&&, const std::string& preloadScriptString);
         virtual void LoadLocalFile(const std::string& path) override;
         virtual void LoadRequest(

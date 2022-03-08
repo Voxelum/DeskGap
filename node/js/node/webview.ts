@@ -7,16 +7,18 @@ import JSONTalk, { IServices, IServiceClient } from 'json-talk'
 
 const { WebViewNative } = require('./bindings');
 const isWinRTEngineAvailable = process.platform === 'win32' && WebViewNative.isWinRTEngineAvailable();
-type Engine = 'winrt' | 'trident';
+const webview2Version = process.platform === 'win32' ? WebViewNative.getWebview2Version() : "";
+type Engine = 'winrt' | 'trident' | 'webview2';
 
 let defaultEngine: Engine | null = null;
 if (process.platform === 'win32') {
-    defaultEngine = isWinRTEngineAvailable ? 'winrt': 'trident';
+    defaultEngine = webview2Version !== '' ? 'webview2' : isWinRTEngineAvailable ? 'winrt': 'trident';
 }
 
 const engineCodeByName: Record<Engine, number> = {
     'trident': 0,
-    'winrt': 1
+    'winrt': 1,
+    'webview2': 2,
 };
 
 export interface WebViewEvents extends IEventMap {

@@ -66,7 +66,7 @@ target_sources(deskgap_platform PRIVATE
     util/winrt.cpp
 )
 
-target_link_libraries(deskgap_platform PRIVATE deskgap_platform_trident_preload_script deskgap_winrt)
+target_link_libraries(deskgap_platform PRIVATE deskgap_platform_trident_preload_script deskgap_winrt deskgap_platform_webview2_preload_script)
 target_link_libraries(deskgap_platform INTERFACE Version.lib Shlwapi.lib ${CMAKE_BINARY_DIR}/packages/Microsoft.Web.WebView2/build/native/x86/WebView2LoaderStatic.lib ${CMAKE_BINARY_DIR}/packages/Microsoft.Windows.ImplementationLibrary/build/native/Microsoft.Windows.ImplementationLibrary.targets)
 target_include_directories(deskgap_platform SYSTEM PUBLIC ${CMAKE_BINARY_DIR}/packages/Microsoft.Web.WebView2/build/native/include ${CMAKE_BINARY_DIR}/packages/Microsoft.Windows.ImplementationLibrary/include)
 

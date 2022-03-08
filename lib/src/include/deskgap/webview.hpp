@@ -30,6 +30,7 @@ namespace DeskGap {
     public:
         #ifdef WIN32
         static bool IsWinRTWebViewAvailable();
+        static std::string GetWebview2Version();
         #endif
         struct EventCallbacks {
             std::function<void()> didFinishLoad;

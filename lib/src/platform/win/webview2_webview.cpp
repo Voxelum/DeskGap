@@ -1,3 +1,4 @@
+
 #include <cstdlib>
 #include <stdexcept>
 
@@ -14,15 +15,20 @@
 #include "./util/wstring_utf8.h"
 
 extern "C" {
-extern char BIN2CODE_DG_PRELOAD_WEBVIEW2_JS_CONTENT[];
-extern int BIN2CODE_DG_PRELOAD_WEBVIEW2_JS_SIZE;
+    extern char BIN2CODE_DG_PRELOAD_WEBVIEW2_JS_CONTENT[];
+    extern int BIN2CODE_DG_PRELOAD_WEBVIEW2_JS_SIZE;
 }
 
 namespace DeskGap {
-    bool Webview2Webview::IsAvailable() {
-        // WinRTWebView needs WebViewControl#AddInitializeScript, which is a
-        // method of IWebViewControl2, which is in UniversalApiContract 7.
-        return true;
+    std::string Webview2Webview::GetAvailableCoreVersion() {
+        LPWSTR version = nullptr;
+        if (SUCCEEDED(GetAvailableCoreWebView2BrowserVersionString(nullptr, &version))) {
+            if (version == nullptr) {
+                return "";
+            }
+            return WStringToUTF8(version);
+        }
+        return "";
     }
 
     using namespace Microsoft::WRL;

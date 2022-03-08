@@ -35,4 +35,8 @@ namespace DeskGap {
         }
         return WinRTWebView::IsAvailable();
     }
+
+    std::string WebView::GetWebview2Version() {
+        return Webview2Webview::GetAvailableCoreVersion();
+    }
 }

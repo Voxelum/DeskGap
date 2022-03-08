@@ -19,9 +19,10 @@ namespace DeskGap {
         void Destroy(const Napi::CallbackInfo& info);
         #ifdef WIN32
         enum class Engine: uint32_t {
-            TRIDENT = 0, WINRT = 1
+            TRIDENT = 0, WINRT = 1, WEBVIEW2 = 2
         };
         static Napi::Value IsWinRTEngineAvailable(const Napi::CallbackInfo& info);
+        static Napi::Value GetWebview2Version(const Napi::CallbackInfo& info);
         #endif
     public:
         WebViewWrap(const Napi::CallbackInfo& info);

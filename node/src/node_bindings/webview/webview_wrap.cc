@@ -20,6 +20,7 @@ namespace DeskGap {
         return DefineClass(env, "WebViewNative", {
         #ifdef WIN32
             StaticMethod("isWinRTEngineAvailable", &WebViewWrap::IsWinRTEngineAvailable),
+            StaticMethod("getWebview2Version", &WebViewWrap::GetWebview2Version),
         #endif
             InstanceMethod("loadLocalFile", &WebViewWrap::LoadLocalFile),
             InstanceMethod("loadRequest", &WebViewWrap::LoadRequest),
@@ -69,8 +70,10 @@ namespace DeskGap {
                     std::string(BIN2CODE_ES6_PROMISE_AUTO_MIN_JS_CONTENT, BIN2CODE_ES6_PROMISE_AUTO_MIN_JS_SIZE) +
                     dgPreloadScript;
 
-            // this->webview_ = std::make_unique<Webview2Webview>(std::move(eventCallbacks), dgPreloadScript);
-            if (engine == Engine::WINRT) {
+            if (engine == Engine::WEBVIEW2) {
+                this->webview_ = std::make_unique<Webview2Webview>(std::move(eventCallbacks), dgPreloadScript);
+            }
+            else if (engine == Engine::WINRT) {
                 this->webview_ = std::make_unique<WinRTWebView>(std::move(eventCallbacks), dgPreloadScript);
             }
             else {
@@ -86,6 +89,10 @@ namespace DeskGap {
     #ifdef WIN32
     Napi::Value WebViewWrap::IsWinRTEngineAvailable(const Napi::CallbackInfo& info) {
         return Napi::Boolean::New(info.Env(), WebView::IsWinRTWebViewAvailable());
+    }
+    Napi::Value WebViewWrap::GetWebview2Version(const Napi::CallbackInfo& info) {
+        std::string version(WebView::GetWebview2Version());
+        return Napi::String::New(info.Env(), version);
     }
     #endif
 

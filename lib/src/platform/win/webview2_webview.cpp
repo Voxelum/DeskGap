@@ -4,19 +4,31 @@
 
 #include <wil/com.h>
 #include <wrl.h>
+#include <objbase.h>
 
 #include "WebView2.h"
 
 #include "webview.hpp"
 #include "webview_impl.h"
+#include "unknwn.h"
 
 #include "webview2_webview.hpp"
 
 #include "./util/wstring_utf8.h"
+#include "./util/win32_check.h"
 
 extern "C" {
     extern char BIN2CODE_DG_PRELOAD_WEBVIEW2_JS_CONTENT[];
     extern int BIN2CODE_DG_PRELOAD_WEBVIEW2_JS_SIZE;
+}
+
+namespace {
+    interface IEventForwarder: IUnknown, IDispatch
+    {
+    };
+
+    const DISPID kExternalDragDispid = 0x1001;
+    const wchar_t* const kExternalDragName = L"drag";
 }
 
 namespace DeskGap {
@@ -33,7 +45,8 @@ namespace DeskGap {
 
     using namespace Microsoft::WRL;
 
-    struct Webview2Webview::Impl : public WebView::Impl {
+    struct Webview2Webview::Impl
+        : public WebView::Impl, public IEventForwarder {
         wil::com_ptr<ICoreWebView2Controller> webviewController;
         wil::com_ptr<ICoreWebView2> webviewWindow;
         HWND containerWnd;
@@ -54,6 +67,7 @@ namespace DeskGap {
         }
 
         virtual void InitWithParent(HWND hWnd) override {
+            containerWnd = hWnd;
             CreateCoreWebView2EnvironmentWithOptions(
                 nullptr, nullptr, nullptr,
                 Callback<
@@ -102,11 +116,6 @@ namespace DeskGap {
                                     }
 
                                     EventRegistrationToken token;
-                                    // VARIANT remoteObjectAsVariant = {};
-
-                                    // webviewWindow->AddHostObjectToScript(
-                                    //     L"eventForwarder",
-                                    //     &remoteObjectAsVariant);
                                     webviewWindow->add_NavigationCompleted(
                                         Callback<
                                             ICoreWebView2NavigationCompletedEventHandler>(
@@ -128,50 +137,48 @@ namespace DeskGap {
                                     // 5 - Scripting
 
                                     // 6 - Communication between host and web
-                                    // webviewWindow->add_WebMessageReceived(
-                                    //     Callback<
-                                    //         ICoreWebView2WebMessageReceivedEventHandler>(
-                                    //         [this](
-                                    //             ICoreWebView2 *webview,
-                                    //             ICoreWebView2WebMessageReceivedEventArgs
-                                    //                 *args) -> HRESULT {
-                                    //             PWSTR message;
-                                    //             args->TryGetWebMessageAsString(
-                                    //                 &message);
-                                    //             this->callbacks.onStringMessage(
-                                    //                 WStringToUTF8(message));
-                                    //             CoTaskMemFree(message);
-                                    //             return S_OK;
-                                    //         })
-                                    //         .Get(),
-                                    //     &token);
+                                    webviewWindow->add_WebMessageReceived(
+                                        Callback<
+                                            ICoreWebView2WebMessageReceivedEventHandler>(
+                                            [this](
+                                                ICoreWebView2 *webview,
+                                                ICoreWebView2WebMessageReceivedEventArgs
+                                                    *args) -> HRESULT {
+                                                PWSTR message;
+                                                args->TryGetWebMessageAsString(
+                                                    &message);
+                                                this->callbacks.onStringMessage(
+                                                    WStringToUTF8(message));
+                                                CoTaskMemFree(message);
+                                                return S_OK;
+                                            })
+                                            .Get(),
+                                        &token);
 
-                                    // webviewWindow->add_DocumentTitleChanged(
-                                    //     Callback<
-                                    //         ICoreWebView2DocumentTitleChangedEventHandler>(
-                                    //         [this](ICoreWebView2 *webview,
-                                    //                IUnknown *args) {
-                                    //             wil::unique_cotaskmem_string
-                                    //                 title;
-                                    //             webview->get_DocumentTitle(
-                                    //                 &title);
-                                    //             this->callbacks
-                                    //                 .onPageTitleUpdated(
-                                    //                     WStringToUTF8(
-                                    //                         title.get()));
-                                    //         })
-                                    //         .Get(),
-                                    //     &token);
+                                    VARIANT remoteObjectAsVariant = {};
+                                    remoteObjectAsVariant.pdispVal = static_cast<IDispatch*>(this);
+                                    remoteObjectAsVariant.vt = VT_DISPATCH;
 
-                                    // webviewWindow
-                                    //     ->AddScriptToExecuteOnDocumentCreated(
-                                    //         L"window.chrome.webview."
-                                    //         L"addEventListener(\'message\', "
-                                    //         L"event => alert(event.data));"
-                                    //         L"window.chrome.webview."
-                                    //         L"postMessage(window.document.URL)"
-                                    //         L";",
-                                    //         nullptr);
+                                    check(webviewWindow->AddHostObjectToScript(L"eventForwarder", &remoteObjectAsVariant));
+
+                                    webviewWindow->add_DocumentTitleChanged(
+                                        Callback<
+                                            ICoreWebView2DocumentTitleChangedEventHandler>(
+                                            [this](ICoreWebView2 *webview,
+                                                   IUnknown *args) {
+                                                wil::unique_cotaskmem_string title;
+                                                webview->get_DocumentTitle(&title);
+                                                this->callbacks.onPageTitleUpdated(
+                                                        WStringToUTF8(title.get()));
+                                                return S_OK;
+                                            })
+                                            .Get(),
+                                        &token);
+
+                                    webviewWindow
+                                        ->AddScriptToExecuteOnDocumentCreated(
+                                            preloadScript.c_str(),
+                                            nullptr);
 
                                     return S_OK;
                                 })
@@ -207,6 +214,61 @@ namespace DeskGap {
         }
 
         ~Impl() {}
+
+        // IUnknown Begin
+        STDMETHODIMP QueryInterface(REFIID riid, void** ppv)
+        {
+            HRESULT rc = S_OK;
+            if (riid == IID_IUnknown) {
+                *ppv = static_cast<IEventForwarder*>(this);
+            } else if (riid == IID_IDispatch) {
+                *ppv = static_cast<IDispatch*>(this);
+            } else {
+                return E_NOINTERFACE;
+            }
+            return rc;
+        }
+
+        ULONG STDMETHODCALLTYPE AddRef(void) override { 
+            return 1;
+        }
+        ULONG STDMETHODCALLTYPE Release(void) override {
+            return 1;
+        }
+        // IUnknown End
+
+        // IDispatch Begin
+        HRESULT STDMETHODCALLTYPE GetTypeInfoCount(UINT*) override { 
+            return S_OK;
+        }
+        HRESULT STDMETHODCALLTYPE GetTypeInfo(UINT, LCID,  ITypeInfo**) override { 
+            return S_OK; 
+        }
+        HRESULT STDMETHODCALLTYPE GetIDsOfNames(REFIID, LPOLESTR* rgszNames, UINT cNames, LCID lcid, DISPID *rgDispId) override {
+            if(cNames == 0 || rgszNames == nullptr || rgszNames[0] == nullptr || rgDispId == nullptr) {
+		        return E_INVALIDARG;
+	        }
+            if (wcscmp(rgszNames[0], kExternalDragName) == 0) {
+                *rgDispId = kExternalDragDispid;
+            }
+	        return S_OK;
+        }
+
+        HRESULT STDMETHODCALLTYPE Invoke(DISPID dispIdMember, REFIID riid, LCID lcid,
+            WORD wFlags, DISPPARAMS *pDispParams,
+            VARIANT *pVarResult, EXCEPINFO *pExcepInfo,
+            UINT *puArgErr) {
+            if (dispIdMember == kExternalDragDispid) {
+                if (HWND windowWnd = GetAncestor(containerWnd, GA_ROOT); windowWnd != nullptr) {
+                    if (SetFocus(windowWnd) != nullptr) {
+                        ::ReleaseCapture();
+                        SendMessage(windowWnd, WM_NCLBUTTONDOWN, HTCAPTION, NULL);
+                    }
+                }
+            }
+            return S_OK;
+        }
+        // IDispatch End
     };
 
     Webview2Webview::Webview2Webview(EventCallbacks &&callbacks,

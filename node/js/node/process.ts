@@ -1,6 +1,7 @@
-const deskgapVersion = require('../../VERSION.txt');
+import { appNative } from "./internal/native";
+// @ts-expect-error
+import deskgapVersion from '../../VERSION.txt';
 
-const { appNative } = require('./bindings');
 
 declare global {
     namespace NodeJS {

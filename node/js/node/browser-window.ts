@@ -1,11 +1,10 @@
 import { bulkUISync } from './internal/dispatch';
-import app from './app';
+import { app } from './app';
 import { EventEmitter, IEventMap } from './internal/events';
 import globals from './internal/globals';
 import { Menu, MenuTypeCode } from './menu';
 import { WebView, WebPreferences } from './webview';
-
-const { BrowserWindowNative } = require('./bindings');
+import { BrowserWindowNative } from './internal/native';
 
 const TitleBarStyleCode = {
     default: 0,
@@ -72,7 +71,7 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
     /** @internal */ private id_: number;
     /** @internal */ private hasBeenShown_ = false;
     /** @internal */ private webview_: WebView;
-    /** @internal */ private native_: any;
+    /** @internal */ private native_: BrowserWindowNative;
     /** @internal */ private title_: string;
     /** @internal */ private titleBarStyle_: TitleBarStyle;
     /** @internal */ private minimumSize_: [number, number];
@@ -87,7 +86,7 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
         if (process.platform !== 'darwin' && !options.hasOwnProperty('menu')) {
             defaultMenu = app.getMenu()
         }
-        
+
         const fullOptions: IBrowserWindowConstructorOptions = Object.assign({
             width: 800, height: 600,
             x: 0, y: 0,
@@ -108,7 +107,7 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
             minHeight: 0,
             minWidth: 0,
             menu: defaultMenu,
-            webPreferences: { }
+            webPreferences: {}
         }, options);
 
         bulkUISync(() => {
@@ -127,7 +126,7 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
                 }
             }, Object.assign({ engine: null }, fullOptions.webPreferences));
 
-            this.native_ = new BrowserWindowNative(this.webview_['native_'],  {
+            this.native_ = new BrowserWindowNative(this.webview_['native_'], {
                 onBlur: () => {
                     if (this.isDestroyed()) return;
                     if (globals.focusedBrowserWindow === this) {
@@ -177,7 +176,7 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
                 this.native_.center();
             }
             else {
-                this.native_.setPosition(fullOptions.x, fullOptions.y,false);
+                this.native_.setPosition(fullOptions.x, fullOptions.y, false);
             }
 
             if (process.platform === 'darwin') {
@@ -206,7 +205,7 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
 
     setTitleBarStyle(style: TitleBarStyle): void {
         this.titleBarStyle_ = style;
-        
+
         this.native_.setTitleBarStyle(TitleBarStyleCode[style.toLowerCase()] || TitleBarStyleCode.default);
     }
     show() {
@@ -236,31 +235,32 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
             this.setVibrancies([]);
         }
     }
-    
+
     setVibrancies(vibrancies: Vibrancy[]) {
+        const computeConstrains = (v: Vibrancy) => {
+            const layoutEntries = Object.entries(v).filter(entry => vibrancyLayoutAttributes.has(entry[0]));
+            if (layoutEntries.length != 4) {
+                throw new Error("There must be exactly 4 layout attributes in a vibrancy");
+            }
+            return layoutEntries.map(([key, value]) => {
+                let numValue = value as number;
+                let isPoint = true;
+                if (typeof value === 'string') {
+                    if (value.endsWith('%')) {
+                        isPoint = false;
+                        value = value.substring(0, value.length - 1);
+                    }
+                    numValue = parseFloat(value);
+                }
+                return [key, numValue, isPoint] as const;
+            })
+        }
         this.native_.setVibrancies((vibrancies || []).filter(v => v != null).map(v => [
             v.material || 'appearance-based',
-            v.blending || (v.material === 'titlebar' ? 'within-window': 'behind-window'),
+            v.blending || (v.material === 'titlebar' ? 'within-window' : 'behind-window'),
             v.state || 'follows-window',
-            (() => {
-                const layoutEntries = Object.entries(v).filter(entry => vibrancyLayoutAttributes.has(entry[0]));
-                if (layoutEntries.length != 4) {
-                    throw new Error("There must be exactly 4 layout attributes in a vibrancy");
-                }
-                return layoutEntries.map(([key, value]) => {
-                    let numValue = value;
-                    let isPoint = true;
-                    if (typeof value === 'string') {
-                        if (value.endsWith('%')) {
-                            isPoint = false;
-                            value = value.substring(0, value.length - 1);
-                        }
-                        numValue = parseFloat(value);
-                    }
-                    return [key, numValue, isPoint];
-                })
-            })()
-        ]));
+            computeConstrains(v)
+        ] as const));
     }
     setPosition(x: number, y: number, animate: boolean = false): void {
         this.native_.setPosition(x, y, animate);
@@ -288,7 +288,7 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
         }
     }
 
-    /** @internal */ 
+    /** @internal */
     private actuallySetTheMenu_() {
         bulkUISync(() => {
             if (this.menu_ == null) {
@@ -352,8 +352,8 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
     minimize(): void {
         this.native_.minimize();
     }
-    
-    close(): void { 
+
+    close(): void {
         this.trigger_('close', { defaultAction: () => this.destroy() });
     }
 

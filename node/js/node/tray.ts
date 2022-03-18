@@ -1,25 +1,8 @@
 import { bulkUISync } from './internal/dispatch';
 import { EventEmitter, IEventMap } from './internal/events';
-import globals from './internal/globals';
+import { TrayNative } from './internal/native';
 import { Menu, MenuTypeCode } from './menu';
 
-interface ITrayNative {
-    setTitle(title: string): void
-    setIcon(iconPath: string): void
-    popupMenu(menu: any, onClose: () => void): void
-    setTooltip(tooltip: string): void
-    destroy(): void
-}
-
-const { TrayNative } = require('./bindings') as {
-    TrayNative: {
-        new(iconPath: string, callbacks: {
-            onClick(): void
-            onDoubleClick(): void
-            onRightClick(): void
-        }): ITrayNative
-    };
-}
 
 export type MenuItemType = 'normal' | 'separator' | 'submenu' | 'checkbox';
 
@@ -29,7 +12,7 @@ export interface TrayEvents extends IEventMap {
 
 export class Tray extends EventEmitter<TrayEvents> {
     /** @internal */
-    private native_: ITrayNative | undefined;
+    private native_: TrayNative | undefined;
 
     private menu_: Menu | undefined;
 

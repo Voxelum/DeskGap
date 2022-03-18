@@ -8,8 +8,7 @@ import { EventEmitter, IEventMap } from './internal/events';
 import { bulkUISync } from './internal/dispatch';
 
 import path = require('path');
-
-const { appNative } = require('./bindings');
+import { AppNative, appNative } from './internal/native';
 
 const pathNameValues = {
     'appData': 0,
@@ -67,7 +66,7 @@ export class App extends EventEmitter<AppEvents> {
     /** @internal */ private triggersWindowAllClosed_ = true;
     /** @internal */ private whenReady_: Promise<void>;
     /** @internal */ private resolveWhenReady_: () => void;
-    /** @internal */ private native_: any;
+    /** @internal */ private native_: AppNative;
     /** @internal */ private menu_: Menu | null = Menu.buildFromTemplate(defaultMenuTemplate);
     /** @internal */ private menuNativeId_: number | null = null;
 
@@ -78,8 +77,6 @@ export class App extends EventEmitter<AppEvents> {
             this.resolveWhenReady_ = resolve;
             this.native_ = appNative;
         });
-
-
     }
 
     /** @internal */
@@ -262,4 +259,4 @@ const app = new App();
 Menu.setApplicationMenu = (menu) => app.setMenu(menu);
 Menu.getApplicationMenu = () => app.getMenu();
 
-export default app;
+export { app };

@@ -1,4 +1,4 @@
-const { delayUISync, commitUISync } = require('../bindings');
+const { delayUISync, commitUISync } = require('./bindings');
 
 let inBulkUISync = false;
 export const bulkUISync = (block: () => void) => {

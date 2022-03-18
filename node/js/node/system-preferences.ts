@@ -1,6 +1,5 @@
 import { EventEmitter, IEventMap } from './internal/events';
-
-const spNative = require('./bindings').systemPreferencesNative;
+import { systemPreferencesNative as native } from './internal/native';
 
 export interface UserDefaultTypes {
     'string': string;
@@ -14,27 +13,25 @@ export interface UserDefaultTypes {
 }
 
 const userDefaultGetters = {
-    'string': spNative.getUserDefaultString,
-    'array': spNative.getUserDefaultArrayJSON,
-    'dictionary': spNative.getUserDefaultDictionaryJSON,
-    'boolean': spNative.getUserDefaultBool,
-    'integer': spNative.getUserDefaultInteger,
-    'float': spNative.getUserDefaultFloat,
-    'double': spNative.getUserDefaultDouble,
-    'url': spNative.getUserDefaultURL
+    'string': native.getUserDefaultString,
+    'array': native.getUserDefaultArrayJSON,
+    'dictionary': native.getUserDefaultDictionaryJSON,
+    'boolean': native.getUserDefaultBool,
+    'integer': native.getUserDefaultInteger,
+    'float': native.getUserDefaultFloat,
+    'double': native.getUserDefaultDouble,
+    'url': native.getUserDefaultURL
 };
 
 export interface SystemPreferenceEvents extends IEventMap {
     'dark-mode-toggled': []
 }
 
-let isDarkMode: boolean;
-
 export class SystemPreference extends EventEmitter<SystemPreferenceEvents> {
     /** @internal */ private isDarkMode_: boolean;
     constructor() {
         super();
-        this.isDarkMode_ = <boolean>spNative.getAndWatchDarkMode(() => {
+        this.isDarkMode_ = native.getAndWatchDarkMode(() => {
             this.isDarkMode_ = !this.isDarkMode_;
             this.trigger_('dark-mode-toggled');
         });
@@ -42,10 +39,10 @@ export class SystemPreference extends EventEmitter<SystemPreferenceEvents> {
     getUserDefault<K extends keyof UserDefaultTypes>(key: string, type: K): UserDefaultTypes[K]  {
         const result = userDefaultGetters[type](key);
         if (type === 'array' || type === 'dictionary') {
-            return JSON.parse(result);
+            return JSON.parse(result as any);
         }
         else {
-            return result;
+            return result as any;
         }
     }
     isDarkMode(): boolean {
@@ -53,6 +50,5 @@ export class SystemPreference extends EventEmitter<SystemPreferenceEvents> {
     }
 }
 
-const systemPreference = new SystemPreference();
+export const systemPreferences = new SystemPreference();
 
-export default systemPreference;

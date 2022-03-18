@@ -8,7 +8,7 @@ const info = {
 
 const packageJSONPath = path.join(appPath, 'package.json');
 try {
-    const packageJSON = __non_webpack_require__(packageJSONPath);
+    const packageJSON = require(packageJSONPath);
     Object.assign(info, {
         name: packageJSON.productName || packageJSON.name,
         version: packageJSON.version

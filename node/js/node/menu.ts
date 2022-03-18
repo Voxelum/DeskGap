@@ -3,24 +3,7 @@ import { parseAcceleratorToTokens } from './accelerator';
 import globals from './internal/globals';
 import { BrowserWindow } from './browser-window'
 import roleDefaults, { Role } from './internal/menu/roles';
-
-interface IMenuItemNative {
-    setEnabled(enabled: boolean): void;
-    setLabel(label: string): void;
-    setChecked(checked: boolean): void;
-    setAccelerator(acceleratorTokens: string[]): void;
-    destroy(): void;
-}
-
-interface IMenuNative {
-    append(item: IMenuItemNative): void;
-    destroy(): void;
-}
-
-const { MenuItemNative, MenuNative } = require('./bindings') as {
-    MenuItemNative: { new(role: string, typeCode: number, submenu: IMenuNative | null, onClick: () => void): IMenuItemNative };
-    MenuNative: { new(typeCode: number, callbacks: {}): IMenuNative }
-}
+import { MenuItemNative, MenuNative } from './internal/native';
 
 export type MenuItemType = 'normal' | 'separator' | 'submenu' | 'checkbox';
 
@@ -56,7 +39,7 @@ let lastNativeId: number = 0;
 export const MenuNativeKey = Symbol('MenuNative')
 
 export class Menu {
-    /** @internal */ private natives_ = new Map<number, IMenuNative>();
+    /** @internal */ private natives_ = new Map<number, MenuNative>();
     public items: MenuItem[] = [];
 
     /** @internal */ private nativeCallbacks_ = {};
@@ -64,6 +47,7 @@ export class Menu {
     append(menuItem: MenuItem) {
         this.items.push(menuItem);
     }
+
     popup(optionsOrWindow?: BrowserWindow | IMenuPopupOptions) {
         const options: IMenuPopupOptions | undefined = (optionsOrWindow instanceof BrowserWindow) ? { window: optionsOrWindow } : optionsOrWindow;
 
@@ -113,7 +97,7 @@ export class Menu {
     }
 
     /** @internal */
-    public createNative_(type: number, window: BrowserWindow | null, theNativeId?: number): [number, IMenuNative] {
+    public createNative_(type: number, window: BrowserWindow | null, theNativeId?: number): [number, MenuNative] {
         const nativeId = theNativeId || ++lastNativeId;
         //console.log(nativeId);
 
@@ -145,7 +129,7 @@ export class MenuItem {
     /** @internal */ private type_: number;
     public click: (item: MenuItem, window: BrowserWindow | null) => void;
     /** @internal */ private submenu_: Menu | null;
-    /** @internal */ private natives_ = new Map<number, IMenuItemNative>();
+    /** @internal */ private natives_ = new Map<number, MenuItemNative>();
     /** @internal */ private checked_: boolean;
     /** @internal */ private accelerator_: string;
     /** @internal */ private role_: string;
@@ -219,9 +203,9 @@ export class MenuItem {
     }
 
     /** @internal */
-    private createNative_(nativeId: number, window: BrowserWindow | null): IMenuItemNative {
+    private createNative_(nativeId: number, window: BrowserWindow | null): MenuItemNative {
 
-        let nativeSubmenu: IMenuNative | null = null;
+        let nativeSubmenu: MenuNative | null = null;
         if (this.submenu_ != null) {
             [, nativeSubmenu] = this.submenu_['createNative_'](MenuItemTypeCode.submenu, window, nativeId);
         }

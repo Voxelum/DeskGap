@@ -2,17 +2,16 @@ import { EventEmitter, IEventMap } from './internal/events';
 import appPath from './internal/app-path';
 import path = require('path');
 import globals from './internal/globals';
-import { platform } from 'os';
 import JSONTalk, { IServices, IServiceClient } from 'json-talk'
+import { WebViewNative } from './internal/native';
 
-const { WebViewNative } = require('./bindings');
 const isWinRTEngineAvailable = process.platform === 'win32' && WebViewNative.isWinRTEngineAvailable();
 const webview2Version = process.platform === 'win32' ? WebViewNative.getWebview2Version() : "";
 type Engine = 'winrt' | 'trident' | 'webview2';
 
 let defaultEngine: Engine | null = null;
 if (process.platform === 'win32') {
-    defaultEngine = webview2Version !== '' ? 'webview2' : isWinRTEngineAvailable ? 'winrt': 'trident';
+    defaultEngine = webview2Version !== '' ? 'webview2' : isWinRTEngineAvailable ? 'winrt' : 'trident';
 }
 
 const engineCodeByName: Record<Engine, number> = {
@@ -34,7 +33,7 @@ let currentId = 0;
 
 export class WebView<Services extends IServices = any> extends EventEmitter<WebViewEvents> {
     /** @internal */ private id_: number;
-    /** @internal */ private native_: any;
+    /** @internal */ private native_: WebViewNative;
     /** @internal */ private engine_: Engine | null;
 
     /** @internal */ private asyncNodeObjectsById_ = new Map<number, any>();
@@ -43,10 +42,10 @@ export class WebView<Services extends IServices = any> extends EventEmitter<WebV
 
     #jsonTalk: JSONTalk<Services>;
     #jsonTalkServices: IServices;
-    
+
     constructor(
-        callbacks: { onPageTitleUpdated: (title: string) => void, onReadyToShow: () => void }, 
-        preferences: WebPreferences, 
+        callbacks: { onPageTitleUpdated: (title: string) => void, onReadyToShow: () => void },
+        preferences: WebPreferences,
     ) {
         super();
         this.id_ = currentId;
@@ -54,7 +53,7 @@ export class WebView<Services extends IServices = any> extends EventEmitter<WebV
 
         this.engine_ = preferences.engine || defaultEngine;
 
-        this.#jsonTalkServices = { };
+        this.#jsonTalkServices = {};
         this.#jsonTalk = new JSONTalk<Services>((message) => {
             this.native_.executeJavaScript(`window.deskgap.__messageReceived(${JSON.stringify(message)})`, null);
         }, this.#jsonTalkServices);
@@ -88,7 +87,7 @@ export class WebView<Services extends IServices = any> extends EventEmitter<WebV
     publishServices(services: IServices) {
         Object.assign(this.#jsonTalkServices, services);
     }
-    
+
     getService<ServiceName extends (keyof Services & string)>(serviceName: ServiceName): IServiceClient<Services[ServiceName]> {
         return this.#jsonTalk.connectService(serviceName)
     }
@@ -104,12 +103,12 @@ export class WebView<Services extends IServices = any> extends EventEmitter<WebV
     isDestroyed(): boolean {
         return this.native_ == null;
     }
-    
+
     loadFile(filePath: string): void {
         this.native_.loadLocalFile(path.resolve(appPath, filePath));
     }
     loadURL(url: string): void {
-        const errorMessage = this.native_.loadRequest("GET", url, [], null);
+        const errorMessage = this.native_.loadRequest("GET", url, [], undefined);
         if (errorMessage != null) {
             throw new Error(errorMessage);
         }
@@ -119,11 +118,11 @@ export class WebView<Services extends IServices = any> extends EventEmitter<WebV
         this.native_.setDevToolsEnabled(enabled);
         this.isDevToolsEnabled_ = enabled;
     }
-    
+
     isDevToolsEnabled(): boolean {
-        return this.isDevToolsEnabled_ ;
+        return this.isDevToolsEnabled_;
     }
-    
+
     reload(): void {
         this.native_.reload();
     }
@@ -148,7 +147,7 @@ export const WebViews = {
         return this.getFocusedWebView();
     },
     getFocusedWebView(): WebView | null {
-        
+
         if (globals.focusedBrowserWindow == null) {
             return null;
         }
@@ -165,7 +164,7 @@ export const WebViews = {
     getDefaultEngine(): Engine | null {
         return defaultEngine;
     },
-    
+
     isEngineAvailable(engine: Engine): boolean {
         if (process.platform !== 'win32') {
             return false;

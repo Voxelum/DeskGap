@@ -1,14 +1,14 @@
 import { BrowserWindow } from './browser-window';
-import path = require('path');
-import fs = require('fs');
-const { dialogNative } = require('./bindings');
+import * as path from 'path';
+import * as fs from 'fs';
+import { dialogNative, NativeFileDialogCommonOptions, NativeFileOpenDialogOptions, NativeFileSaveDialogOptions } from './internal/native';
 
 export interface IFileFilter {
     name: string;
     extensions: string[];
 }
 
-export interface IFileDialogCommonOptions {
+export interface FileDialogCommonOptions {
     title: string | null;
     defaultPath: string | null;
     buttonLabel: string | null;
@@ -18,10 +18,10 @@ export interface IFileDialogCommonOptions {
 
 export type FileOpenDialogProperty = keyof typeof FileOpenDialogPropertyEnum;
 
-export interface IFileOpenDialogOptions extends IFileDialogCommonOptions {
+export interface FileOpenDialogOptions extends FileDialogCommonOptions {
     properties: FileOpenDialogProperty[]
 }
-export interface IFileSaveDialogOptions extends IFileDialogCommonOptions {
+export interface FileSaveDialogOptions extends FileDialogCommonOptions {
     nameFieldLabel: string | null;
     showsTagField: boolean | null;
 }
@@ -37,24 +37,8 @@ const FileOpenDialogPropertyEnum = {
     treatPackageAsDirectory: 1 << 7
 };
 
-interface INativeFileDialogCommonOptions extends IFileDialogCommonOptions {
-    defaultDirectory: string | null;
-    defaultFilename: string | null;
-}
-
-interface INativeFileOpenDialogOptions {
-    commonOptions: INativeFileDialogCommonOptions;
-    propertyBits: number;
-}
-
-interface INativeFileSaveDialogOptions {
-    commonOptions: INativeFileDialogCommonOptions;
-    nameFieldLabel: string | null;
-    showsTagField: boolean | null;
-}
-
-const prepareCommonOptions = (options:  Partial<IFileDialogCommonOptions>): INativeFileDialogCommonOptions => {
-    const result: INativeFileDialogCommonOptions = Object.assign({
+const prepareCommonOptions = (options: Partial<FileDialogCommonOptions>): NativeFileDialogCommonOptions => {
+    const result: NativeFileDialogCommonOptions = Object.assign({
         title: null,
         defaultPath: null,
         buttonLabel: null,
@@ -97,12 +81,12 @@ const prepareCommonOptions = (options:  Partial<IFileDialogCommonOptions>): INat
     return result;
 }
 
-export default class Dialog {
+export class Dialog {
     static showErrorBox(title: string, content: string): void {
         dialogNative.showErrorBox(title, content);
     }
 
-    static showOpenDialog(browserWindow: BrowserWindow, options: Partial<IFileOpenDialogOptions>, callback: (filePaths: string[] | null) => void): void {
+    static showOpenDialog(browserWindow: BrowserWindow, options: Partial<FileOpenDialogOptions>, callback: (filePaths: string[] | null) => void): void {
         let propertyBits = 0;
         for (const property of options.properties || []) {
             if (property in FileOpenDialogPropertyEnum) {
@@ -119,7 +103,7 @@ export default class Dialog {
 
         const commonOptions = prepareCommonOptions(options);
 
-        const nativeOptions: INativeFileOpenDialogOptions = {
+        const nativeOptions: NativeFileOpenDialogOptions = {
             commonOptions,
             propertyBits
         };
@@ -127,17 +111,17 @@ export default class Dialog {
         dialogNative.showOpenDialog(browserWindow != null ? browserWindow["native_"] : null, nativeOptions, callback);
     }
 
-    static showOpenDialogAsync(browserWindow: BrowserWindow, options: Partial<IFileOpenDialogOptions>): Promise<{ filePaths: string[] | null}> {
+    static showOpenDialogAsync(browserWindow: BrowserWindow, options: Partial<FileOpenDialogOptions>): Promise<{ filePaths: string[] | null }> {
         return new Promise((resolve) => {
             Dialog.showOpenDialog(browserWindow, options, (filePaths) => resolve({ filePaths }));
         });
     }
 
 
-    static showSaveDialog(browserWindow: BrowserWindow, options: Partial<IFileSaveDialogOptions>, callback: (filePath: string | null) => void): void {
+    static showSaveDialog(browserWindow: BrowserWindow, options: Partial<FileSaveDialogOptions>, callback: (filePath: string | null) => void): void {
         const commonOptions = prepareCommonOptions(options);
-        
-        const nativeOptions: INativeFileSaveDialogOptions = Object.assign({
+
+        const nativeOptions: NativeFileSaveDialogOptions = Object.assign({
             nameFieldLabel: null,
             showsTagField: null,
         }, options, { commonOptions });
@@ -145,7 +129,7 @@ export default class Dialog {
         dialogNative.showSaveDialog(browserWindow != null ? browserWindow["native_"] : null, nativeOptions, callback);
     }
 
-    static showSaveDialogAsync(browserWindow: BrowserWindow, options: Partial<IFileOpenDialogOptions>): Promise<{ filePath: string | null}> {
+    static showSaveDialogAsync(browserWindow: BrowserWindow, options: Partial<FileOpenDialogOptions>): Promise<{ filePath: string | null }> {
         return new Promise((resolve) => {
             Dialog.showSaveDialog(browserWindow, options, (filePath) => resolve({ filePath }));
         });

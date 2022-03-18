@@ -1,6 +1,12 @@
 const { app, BrowserWindow, dialog, Tray, Menu } = require('deskgap');
 const { join } = require('path');
 
+const lock = app.requestSingleInstanceLock()
+console.log(lock)
+app.on('second-instance', (args, cwd) => {
+    console.log(`second instance ${cwd}`)
+    console.log(args)
+})
 app.once('ready', () => {
     const mainWindow = new BrowserWindow({
         show: false,

@@ -24,6 +24,31 @@ Napi::Object DeskGap::AppWrap::AppObject(const Napi::Env& env) {
         });
     }));
 
+    appObject.Set("requestSingleInstanceLock", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+        Napi::Object jsCallbacks = info[0].As<Napi::Object>();
+        auto jsSecondInstance = JSFunctionForUI::Persist(jsCallbacks.Get("onSecondInstance").As<Napi::Function>());
+        bool result;
+        UISync(info.Env(), [&]() {
+            result = DeskGap::App::RequestSingleInstanceLock({
+                [jsSecondInstance { std::move(jsSecondInstance) }](const std::string&& args, const std::string&& cwd) {
+                    jsSecondInstance->Call([args { std::move(args) }, cwd { std::move(cwd) }](napi_env env) -> std::vector<napi_value>  {
+                        return { JSFrom(env, args), JSFrom(env, cwd) };
+                    });
+                }
+            });
+        });
+        return Napi::Boolean::New(info.Env(), result);
+    }));
+
+    appObject.Set("hasSingleInstanceLock", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+        bool result = DeskGap::App::HasSingleInstanceLock();
+        return Napi::Boolean::New(info.Env(), result);
+    }));
+
+    appObject.Set("releaseSingleInstanceLock", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+        DeskGap::App::ReleaseSingleInstanceLock();
+    }));
+    
     appObject.Set("exit", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
         uint32_t exitCode = Native<uint32_t>::From(info[0]);
         UISync(info.Env(), [exitCode]() {

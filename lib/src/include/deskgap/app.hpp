@@ -13,7 +13,13 @@ namespace DeskGap {
             std::function<void()> onReady;
             std::function<void()> beforeQuit;
         };
+
+        using SecondInstanceEventCallback = std::function<void(const std::string &&, const std::string &&)>;
+
         static void Init();
+        static bool RequestSingleInstanceLock(SecondInstanceEventCallback&& callback);
+        static bool HasSingleInstanceLock();
+        static void ReleaseSingleInstanceLock();
         static void Run(EventCallbacks&& callbacks);
         static void Exit(int exitCode);
 
@@ -32,6 +38,7 @@ namespace DeskGap {
         static void SetMenu(std::optional<std::reference_wrapper<Menu>> menu);
     #endif
         static std::string GetPath(PathName name);
+        static std::string GetExecutablePath();
         static std::string GetResourcePath(const char* argv0);
     };
 }

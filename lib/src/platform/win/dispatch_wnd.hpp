@@ -10,6 +10,7 @@ namespace DeskGap {
     const UINT DG_DISPATCH_MSG = WM_APP + 1;
     const UINT DG_TRAY_MSG = WM_APP + 2;
     extern HWND appWindowWnd;
+    const wchar_t *const DispatcherWndClassName = L"DeskGapDispatcherWindow";
 }
 
 #endif

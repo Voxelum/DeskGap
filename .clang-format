@@ -1,5 +1,4 @@
 IndentWidth: 4
-BreakBeforeBraces: false
 NamespaceIndentation: All
 IndentAccessModifiers: false
 ColumnLimit: 150

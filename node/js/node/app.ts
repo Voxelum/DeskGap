@@ -45,12 +45,14 @@ export interface AppEvents extends IEventMap {
     'will-quit': [],
     'before-quit': [],
 
+    'second-instance': [string[], string]
     /**
      * Emitted when the application is quitting.
      * @param 0 [[IEventObject]]
      * @param 1 The exit code
      */
     'quit': [number]
+
 }
 
 /** 
@@ -119,6 +121,22 @@ export class App extends EventEmitter<AppEvents> {
 
     getAppPath(): string {
         return appPath;
+    }
+
+    requestSingleInstanceLock() {
+        return this.native_.requestSingleInstanceLock({
+            onSecondInstance: (args: string, pwd: string) => {
+                this.trigger_('second-instance', {}, args.split(' '), pwd);
+            },
+        });
+    }
+
+    hasSingleInstanceLock() {
+        return this.native_.hasSingleInstanceLock();
+    }
+
+    releaseSingleInstanceLock() {
+        this.native_.releaseSingleInstanceLock();
     }
 
     quit() {

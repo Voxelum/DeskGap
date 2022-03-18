@@ -55,7 +55,30 @@ namespace {
         );
         assert(result != 0);
         return std::move(wstring);
+    }
 
+    std::wstring UTF8ToWString(std::string &&utf8) {
+        DWORD wbyteCount = MultiByteToWideChar(
+            CP_UTF8,
+            0,
+            utf8.c_str(),
+            -1,
+            nullptr,
+            0
+        );
+
+        assert(wbyteCount >= 1);
+        
+        std::wstring wstring(wbyteCount - 1, L'\0');
+        DWORD result = MultiByteToWideChar(CP_UTF8,
+            0,
+            utf8.c_str(),
+            -1,
+            wstring.data(),
+            wbyteCount
+        );
+        assert(result != 0);
+        return std::move(wstring);
     }
 }
 

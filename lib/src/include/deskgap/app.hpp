@@ -1,5 +1,5 @@
-#ifndef DESKGAP_APP_HPP
-#define DESKGAP_APP_HPP
+#ifndef DESKGAP_APP
+#define DESKGAP_APP
 
 #include <functional>
 #include <memory>
@@ -20,6 +20,8 @@ namespace DeskGap {
         static bool RequestSingleInstanceLock(SecondInstanceEventCallback&& callback);
         static bool HasSingleInstanceLock();
         static void ReleaseSingleInstanceLock();
+        static bool SetAsDefaultProtocolClient(const std::string &);
+        static bool IsDefaultProtocolClient(const std::string &);
         static void Run(EventCallbacks&& callbacks);
         static void Exit(int exitCode);
 
@@ -43,4 +45,4 @@ namespace DeskGap {
     };
 }
 
-#endif
+#endif /* DESKGAP_APP */

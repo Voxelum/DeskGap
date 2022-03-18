@@ -7,6 +7,7 @@ add_custom_command(
     COMMAND ${NPM_ESBUILD}
         --platform=node
         --outfile=${CMAKE_CURRENT_BINARY_DIR}/dg_node.js
+        --format=cjs
         $<IF:$<CONFIG:Release>,--minify-whitespace,--sourcemap=external>
         --tsconfig=${CMAKE_CURRENT_LIST_DIR}/node/tsconfig.json
         ${CMAKE_CURRENT_LIST_DIR}/node/index.ts
@@ -19,6 +20,7 @@ add_custom_command(
     COMMAND ${NPM_ESBUILD}
         --platform=browser
         --outfile=${CMAKE_CURRENT_BINARY_DIR}/dg_ui.js
+        --format=iife
         $<IF:$<CONFIG:Release>,--minify-whitespace,--sourcemap=external>
         --tsconfig=${CMAKE_CURRENT_LIST_DIR}/ui/tsconfig.json
         ${CMAKE_CURRENT_LIST_DIR}/ui/preload.ts

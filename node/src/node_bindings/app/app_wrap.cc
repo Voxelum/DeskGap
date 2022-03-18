@@ -24,6 +24,18 @@ Napi::Object DeskGap::AppWrap::AppObject(const Napi::Env& env) {
         });
     }));
 
+    appObject.Set("isDefaultProtocolClient", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+        std::string protocol = info[0].As<Napi::String>();
+        bool result = DeskGap::App::IsDefaultProtocolClient(protocol);
+        return Napi::Boolean::New(info.Env(), result);
+    }));
+
+    appObject.Set("setAsDefaultProtocolClient", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+        std::string protocol = info[0].As<Napi::String>();
+        bool result = DeskGap::App::SetAsDefaultProtocolClient(protocol);
+        return Napi::Boolean::New(info.Env(), result);
+    }));
+
     appObject.Set("requestSingleInstanceLock", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
         Napi::Object jsCallbacks = info[0].As<Napi::Object>();
         auto jsSecondInstance = JSFunctionForUI::Persist(jsCallbacks.Get("onSecondInstance").As<Napi::Function>());

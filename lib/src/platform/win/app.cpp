@@ -2,6 +2,7 @@
 #include "./util/wstring_utf8.h"
 #include "dispatch_wnd.hpp"
 #include "process_singleton.hpp"
+#include "util/reg_key.hpp"
 #include "webview_impl.h"
 #include <cstdlib>
 #include <fileapi.h>
@@ -13,6 +14,83 @@ namespace DeskGap {
     HWND appWindowWnd;
     extern LRESULT OnTrayClick(WPARAM wp, LPARAM lp);
     std::unique_ptr<ProcessSingleton> process_singleton_;
+
+    bool App::SetAsDefaultProtocolClient(const std::string &protocol) {
+        // HKEY_CLASSES_ROOT
+        //    $PROTOCOL
+        //       (Default) = "URL:$NAME"
+        //       URL Protocol = ""
+        //       shell
+        //          open
+        //             command
+        //                (Default) = "$COMMAND" "%1"
+        //
+        // However, the "HKEY_CLASSES_ROOT" key can only be written by the
+        // Administrator user. So, we instead write to "HKEY_CURRENT_USER\
+        // Software\Classes", which is inherited by "HKEY_CLASSES_ROOT"
+        // anyway, and can be written by unprivileged users.
+
+        if (protocol.empty())
+            return false;
+
+        std::wstring exe(UTF8ToWString(GetExecutablePath()));
+        // if (!GetProtocolLaunchPath(args, &exe))
+        //     return false;
+
+        // Main Registry Key
+        HKEY root = HKEY_CURRENT_USER;
+        std::wstring keyPath = UTF8ToWString("Software\\Classes\\" + protocol);
+        std::wstring urlDecl = UTF8ToWString("URL:" + protocol);
+
+        // Command Key
+        std::wstring cmdPath = keyPath + L"\\shell\\open\\command";
+
+        // Write information to registry
+        RegKey key(root, keyPath.c_str(), KEY_ALL_ACCESS);
+        if (FAILED(key.WriteValue(L"URL Protocol", L"")) || FAILED(key.WriteValue(L"", urlDecl.c_str())))
+            return false;
+
+        RegKey commandKey(root, cmdPath.c_str(), KEY_ALL_ACCESS);
+        if (FAILED(commandKey.WriteValue(L"", exe.c_str())))
+            return false;
+
+        return true;
+    }
+
+    bool App::IsDefaultProtocolClient(const std::string &protocol) {
+        if (protocol.empty())
+            return false;
+
+        std::wstring exe(UTF8ToWString(GetExecutablePath()));
+        // if (!GetProtocolLaunchPath(args, &exe))
+        //     return false;
+
+        // Main Registry Key
+        HKEY root = HKEY_CURRENT_USER;
+        std::string keyPathA("Software\\Classes\\" + protocol);
+        std::wstring keyPath(UTF8ToWString(keyPathA.c_str()));
+
+        // Command Key
+        std::wstring cmdPath = keyPath + L"\\shell\\open\\command";
+
+        RegKey key;
+        RegKey commandKey;
+        if (FAILED(key.Open(root, keyPath.c_str(), KEY_ALL_ACCESS)))
+            // Key doesn't exist, we can confirm that it is not set
+            return false;
+
+        if (FAILED(commandKey.Open(root, cmdPath.c_str(), KEY_ALL_ACCESS)))
+            // Key doesn't exist, we can confirm that it is not set
+            return false;
+
+        std::wstring keyVal;
+        if (FAILED(commandKey.ReadValue(L"", &keyVal)))
+            // Default value not set, we can confirm that it is not set
+            return false;
+
+        // Default value is the same as current file path
+        return keyVal == exe;
+    }
 
     bool App::RequestSingleInstanceLock(SecondInstanceEventCallback &&callbacks) {
         if (HasSingleInstanceLock())

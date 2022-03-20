@@ -6,14 +6,18 @@
 #include "./util/wstring_utf8.h"
 #include "./util/win32_check.h"
 #include "./util/dpi.h"
+#include "./util/win_version.h"
+#include "util/ui_theme_host.hpp"
+#include <gdiplus.h>
 
 namespace {
 	const wchar_t* const BrowserWindowWndClassName = L"DeskGapBrowserWindow";
 }
 
 namespace DeskGap {
-    BrowserWindow::Impl::Impl(const WebView& webView, EventCallbacks& callbacks): webView(webView), callbacks(std::move(callbacks)) {
+    extern std::unique_ptr<UXThemeHost> theme_host_;
 
+    BrowserWindow::Impl::Impl(const WebView& webView, EventCallbacks& callbacks): webView(webView), callbacks(std::move(callbacks)) {
     }
 
     BrowserWindow::BrowserWindow(const WebView& webView, EventCallbacks&& callbacks): impl_(std::make_unique<Impl>(webView, callbacks)) {
@@ -35,6 +39,15 @@ namespace DeskGap {
                             }
                             else {
                                 browserWindow->impl_->callbacks.onFocus();
+                            }
+
+                            if (LOWORD(wp) == WA_ACTIVE || LOWORD(wp) == WA_CLICKACTIVE)
+                            {
+                                browserWindow->impl_->active = true;
+                            }
+                            else if (LOWORD(wp) == WA_INACTIVE)
+                            {
+                                browserWindow->impl_->active = false;
                             }
                             break;
                         }
@@ -72,6 +85,9 @@ namespace DeskGap {
                             break;
                         }
                     }
+                    if (browserWindow->impl_->compositor) {
+                        browserWindow->impl_->compositor->Sync(hwnd, msg, wp, lp, browserWindow->impl_->active);
+                    }
                 }
                 return DefWindowProcW(hwnd, msg, wp, lp);
             };
@@ -82,12 +98,16 @@ namespace DeskGap {
 
         impl_->windowWnd = CreateWindowW(
             BrowserWindowWndClassName,
-            L"", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
+            L"",
+            WS_OVERLAPPEDWINDOW,
+            CW_USEDEFAULT,
             CW_USEDEFAULT, 0, 0,
             nullptr, nullptr,
             GetModuleHandleW(nullptr),
             nullptr
         );
+
+        theme_host_->AllowDarkModeForWindow(impl_->windowWnd, theme_host_->ShouldSystemUseDarkMode());
         SetWindowLongPtrW(impl_->windowWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 
         webView.impl_->InitWithParent(impl_->windowWnd);
@@ -246,6 +266,30 @@ namespace DeskGap {
     }
     void BrowserWindow::Close() {
 
+    }
+
+    bool BrowserWindow::SetAcrylic(bool enabled) {
+        if (!impl_->compositor) {
+            auto version = GetWindowsVersion();
+            if (version.has_value()) {
+                impl_->compositor.reset(Acrylic::AcrylicCompositor::Create(version->buildNumber).release());
+            }
+        }
+
+        if (enabled) {
+            Acrylic::AcrylicCompositor::AcrylicEffectParameter param;
+            param.blurAmount = 40;
+            param.saturationAmount = 2;
+            param.tintColor = D2D1::ColorF(0.0f, 0.0f, 0.0f, .30f);
+            param.fallbackColor = D2D1::ColorF(0.10f,0.10f,0.10f,1.0f);
+
+            impl_->compositor->SetAcrylicEffect(impl_->windowWnd, Acrylic::AcrylicCompositor::BACKDROP_SOURCE_DESKTOP, param);
+        }
+        return false;
+    }
+
+    bool BrowserWindow::SetMica(bool enabled) {
+        return false;
     }
 
     void BrowserWindow::PopupMenu(const Menu& menu, const std::array<int, 2>* location, int positioningItem,  std::function<void()>&& onClose) {

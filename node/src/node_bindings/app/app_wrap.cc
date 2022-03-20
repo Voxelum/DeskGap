@@ -24,6 +24,11 @@ Napi::Object DeskGap::AppWrap::AppObject(const Napi::Env& env) {
         });
     }));
 
+    appObject.Set("getLocale", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+        auto result = DeskGap::App::GetLocale();
+        return JSFrom(info.Env(), result);
+    }));
+
     appObject.Set("isDefaultProtocolClient", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
         std::string protocol = info[0].As<Napi::String>();
         bool result = DeskGap::App::IsDefaultProtocolClient(protocol);

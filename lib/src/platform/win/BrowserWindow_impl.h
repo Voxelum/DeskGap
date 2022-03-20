@@ -4,6 +4,7 @@
 #include <Windows.h>
 
 #include "browser_window.hpp"
+#include "util/acrylic_compositor.h"
 #include "webview.hpp"
 
 namespace DeskGap {
@@ -16,6 +17,9 @@ namespace DeskGap {
 
         POINT maxTrackSize;
         POINT minTrackSize;
+
+        std::unique_ptr<Acrylic::AcrylicCompositor> compositor;
+        bool active;
 
         HANDLE appIcon {nullptr};
         HANDLE windowIcon {nullptr};

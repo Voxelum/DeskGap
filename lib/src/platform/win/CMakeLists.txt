@@ -63,6 +63,9 @@ target_sources(deskgap_platform PRIVATE
     delay_load_hook.cpp
     process_singleton.cpp
     tray.cpp
+    util/acrylic_compositor.cpp
+    # util/ui_theme_host.cpp
+    util/win_version.cpp
     util/dpi.cpp
     util/winrt.cpp
 )

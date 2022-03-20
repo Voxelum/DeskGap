@@ -128,12 +128,24 @@ export class App extends EventEmitter<AppEvents> {
         });
     }
 
+    getLocale() {
+        return this.native_.getLocale();
+    }
+
     hasSingleInstanceLock() {
         return this.native_.hasSingleInstanceLock();
     }
 
     releaseSingleInstanceLock() {
         this.native_.releaseSingleInstanceLock();
+    }
+
+    isDefaultProtocolClient(protocol: string): boolean {
+        return this.native_.isDefaultProtocolClient(protocol);
+    }
+
+    setAsDefaultProtocolClient(protocol: string): boolean {
+        return this.native_.setAsDefaultProtocolClient(protocol);
     }
 
     quit() {

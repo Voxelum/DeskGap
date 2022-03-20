@@ -3,6 +3,7 @@
 #include "dispatch_wnd.hpp"
 #include "process_singleton.hpp"
 #include "util/reg_key.hpp"
+#include "util/ui_theme_host.hpp"
 #include "webview_impl.h"
 #include <cstdlib>
 #include <fileapi.h>
@@ -14,6 +15,7 @@ namespace DeskGap {
     HWND appWindowWnd;
     extern LRESULT OnTrayClick(WPARAM wp, LPARAM lp);
     std::unique_ptr<ProcessSingleton> process_singleton_;
+    std::unique_ptr<UXThemeHost> theme_host_;
 
     bool App::SetAsDefaultProtocolClient(const std::string &protocol) {
         // HKEY_CLASSES_ROOT
@@ -55,6 +57,12 @@ namespace DeskGap {
             return false;
 
         return true;
+    }
+
+    std::string App::GetLocale() {
+        wchar_t buf[LOCALE_NAME_MAX_LENGTH];
+        GetUserDefaultLocaleName(buf, LOCALE_NAME_MAX_LENGTH);
+        return WStringToUTF8(buf);
     }
 
     bool App::IsDefaultProtocolClient(const std::string &protocol) {
@@ -172,6 +180,14 @@ namespace DeskGap {
         RegisterClassExW(&dispatcherWindowClass);
 
         appWindowWnd = CreateWindowW(DispatcherWndClassName, L"__DISPATCH__", 0, 0, 0, 0, 0, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+
+        if (!theme_host_) {
+            theme_host_.reset(UXThemeHost::Create().release());
+        }
+        if (theme_host_) {
+            theme_host_->SetPreferredAppMode(UXThemeHost::PreferredAppMode::AllowDark);
+            theme_host_->AllowDarkModeForWindow(appWindowWnd, theme_host_->ShouldSystemUseDarkMode());
+        }
     }
 
     void App::Run(EventCallbacks &&callbacks) {

@@ -58,6 +58,12 @@ namespace DeskGap {
         void SetMaximumSize(int width, int height);
         void SetMinimumSize(int width, int height);
 
+    #ifdef WIN32
+        bool SetAcrylic(bool);
+        // waiting winui 3...
+        bool SetMica(bool);
+    #endif
+
     #ifndef __APPLE__
         void SetMenu(const Menu*);
         void SetIcon(const std::optional<std::string>& iconPath);

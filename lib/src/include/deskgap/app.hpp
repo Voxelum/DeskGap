@@ -22,6 +22,7 @@ namespace DeskGap {
         static void ReleaseSingleInstanceLock();
         static bool SetAsDefaultProtocolClient(const std::string &);
         static bool IsDefaultProtocolClient(const std::string &);
+        static std::string GetLocale();
         static void Run(EventCallbacks&& callbacks);
         static void Exit(int exitCode);
 

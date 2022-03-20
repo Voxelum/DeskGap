@@ -16,6 +16,7 @@ export interface AppNative {
         onSecondInstance(args: string, cwd: string): void;
     }): boolean
 
+    getLocale(): string
     hasSingleInstanceLock(): boolean
     releaseSingleInstanceLock(): void
     exit(code: number): void

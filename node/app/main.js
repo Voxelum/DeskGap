@@ -1,18 +1,31 @@
-const { app, BrowserWindow, dialog, Tray, Menu } = require('deskgap');
+const { app, BrowserWindow, dialog, Tray, Menu, systemPreferences } = require('deskgap');
 const { join } = require('path');
 
 const lock = app.requestSingleInstanceLock()
+
 console.log(lock)
 app.on('second-instance', (args, cwd) => {
     console.log(`second instance ${cwd}`)
     console.log(args)
 })
+
+const isDefaultClient = app.isDefaultProtocolClient('xmcl')
+
+console.log(`locale: ${app.getLocale()}`)
+console.log(`Dark theme: ${systemPreferences.isDarkMode()}`)
+
+console.log(`protocol: ${isDefaultClient}`)
+console.log(`set protocol: ${app.setAsDefaultProtocolClient('xmcl')}`)
+
 app.once('ready', () => {
     const mainWindow = new BrowserWindow({
         show: false,
-        width: 800, height: 600,
+        width: 800,
+        height: 600,
+        frame: false,
+        // titleBarStyle: 'hidden',
+        maximizable: false,
     }).once('ready-to-show', () => {
-        
         for (const eventName of ['blur', 'focus']) {
             mainWindow.on(eventName, () => { 
                 mainWindow.webView.getService('').send('windowEvent', eventName);

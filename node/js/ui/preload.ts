@@ -17,6 +17,15 @@ export class DeskGapInBroswer<Services extends IServices> {
     getService<ServiceName extends (keyof Services & string)>(serviceName: ServiceName): IServiceClient<Services[ServiceName]> {
         return jsonTalk.connectService(serviceName)
     }
+    /**
+     * Get the file system path for a File object from drag-and-drop.
+     * Returns an empty string if the path is not available.
+     * @param file The File object from a drop event's dataTransfer.files
+     * @returns The absolute file system path, or empty string if unavailable
+     */
+    getPathForFile(file: File): string {
+        return internalDeskGap.getPathForFile(file);
+    }
 }
 
 declare global {

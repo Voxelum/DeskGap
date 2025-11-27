@@ -155,6 +155,14 @@ namespace DeskGap {
             );
             webkit_user_content_manager_register_script_message_handler(manager, "stringMessage");
 
+            impl_->scriptFileDropConnection = g_signal_connect(
+                manager,
+                "script-message-received::fileDrop",
+                G_CALLBACK(Impl::HandleScriptFileDrop),
+                this
+            );
+            webkit_user_content_manager_register_script_message_handler(manager, "fileDrop");
+
             {
                 WebKitUserScript* preloadUserScript = webkit_user_script_new(
                     preloadScript.c_str(),
@@ -187,6 +195,20 @@ namespace DeskGap {
             impl_->gtkWebView, "notify::title",
             G_CALLBACK(Impl::HandleTitleChanged), this
         );
+        
+        // Set up drag-and-drop for file path extraction
+        static GtkTargetEntry dropTargets[] = {
+            { (gchar*)"text/uri-list", 0, 0 }
+        };
+        gtk_drag_dest_set(GTK_WIDGET(impl_->gtkWebView), 
+                          GTK_DEST_DEFAULT_ALL,
+                          dropTargets, 
+                          G_N_ELEMENTS(dropTargets), 
+                          GDK_ACTION_COPY);
+        impl_->dragDataReceivedConnection = g_signal_connect(
+            impl_->gtkWebView, "drag-data-received",
+            G_CALLBACK(Impl::HandleDragDataReceived), this
+        );
     }
 
     void WebView::Impl::HandleTitleChanged(GObject*, GParamSpec*, WebView* webView) {
@@ -215,6 +237,46 @@ namespace DeskGap {
 
         webView->impl_->callbacks.onStringMessage(std::move(*resultMessage));
     }
+    void WebView::Impl::HandleScriptFileDrop(WebKitUserContentManager*, WebKitJavascriptResult* jsResult, WebView* webView) {
+        webkit_javascript_result_unref(jsResult);
+        
+        // Send file paths back to JavaScript
+        std::vector<std::string>& fileURIs = webView->impl_->lastDroppedFileURIs;
+        for (size_t i = 0; i < fileURIs.size(); i++) {
+            std::string& uri = fileURIs[i];
+            // Convert file:// URI to path
+            gchar* path = g_filename_from_uri(uri.c_str(), nullptr, nullptr);
+            if (path) {
+                // Escape for JavaScript
+                std::string escapedPath;
+                for (const char* p = path; *p; ++p) {
+                    if (*p == '\\') {
+                        escapedPath += "\\\\";
+                    } else if (*p == '"') {
+                        escapedPath += "\\\"";
+                    } else {
+                        escapedPath += *p;
+                    }
+                }
+                std::string script = "window.deskgap._setFilePathFromNative(" + 
+                    std::to_string(i) + ", \"" + escapedPath + "\");";
+                webkit_web_view_run_javascript(webView->impl_->gtkWebView, script.c_str(), nullptr, nullptr, nullptr);
+                g_free(path);
+            }
+        }
+        fileURIs.clear();
+    }
+    void WebView::Impl::HandleDragDataReceived(GtkWidget*, GdkDragContext*, gint, gint, 
+                                                GtkSelectionData* data, guint, guint, WebView* webView) {
+        gchar** uris = gtk_selection_data_get_uris(data);
+        if (uris) {
+            webView->impl_->lastDroppedFileURIs.clear();
+            for (gchar** uri = uris; *uri; ++uri) {
+                webView->impl_->lastDroppedFileURIs.push_back(*uri);
+            }
+            g_strfreev(uris);
+        }
+    }
     gboolean WebView::Impl::HandleButtonPressEvent(GtkWidget*, GdkEventButton* event, WebView* webView) {
         if (event->button == 1 && event->type == GDK_BUTTON_PRESS) {
             webView->impl_->lastLeftMouseDownEvent.emplace(*event);
@@ -233,7 +295,8 @@ namespace DeskGap {
             impl_->loadChangedConnection,
             impl_->buttonPressEventConnection,
             impl_->buttonReleaseEventConnection,
-            impl_->titleChangedConnection
+            impl_->titleChangedConnection,
+            impl_->dragDataReceivedConnection
         }) {
             g_signal_handler_disconnect(impl_->gtkWebView, connection);
         }
@@ -241,7 +304,8 @@ namespace DeskGap {
         WebKitUserContentManager* manager = webkit_web_view_get_user_content_manager(impl_->gtkWebView);
         for (gulong connection: {
             impl_->scriptStringMessageConnection,
-            impl_->scriptWindowDragConnection
+            impl_->scriptWindowDragConnection,
+            impl_->scriptFileDropConnection
         }) {
             g_signal_handler_disconnect(manager, connection);
         }

@@ -129,6 +129,42 @@ namespace DeskGap {
                                 Callback<ICoreWebView2WebMessageReceivedEventHandler>([this](
                                                                                           ICoreWebView2 *webview,
                                                                                           ICoreWebView2WebMessageReceivedEventArgs *args) -> HRESULT {
+                                    // Check for additional objects (file drops)
+                                    wil::com_ptr<ICoreWebView2WebMessageReceivedEventArgs2> args2;
+                                    if (SUCCEEDED(args->QueryInterface(IID_PPV_ARGS(&args2)))) {
+                                        wil::com_ptr<ICoreWebView2ObjectCollectionView> objectsCollection;
+                                        if (SUCCEEDED(args2->get_AdditionalObjects(&objectsCollection))) {
+                                            UINT length = 0;
+                                            objectsCollection->get_Count(&length);
+                                            for (UINT i = 0; i < length; i++) {
+                                                wil::com_ptr<IUnknown> object;
+                                                objectsCollection->GetValueAtIndex(i, &object);
+                                                wil::com_ptr<ICoreWebView2File> file;
+                                                if (SUCCEEDED(object->QueryInterface(IID_PPV_ARGS(&file)))) {
+                                                    wil::unique_cotaskmem_string path;
+                                                    if (SUCCEEDED(file->get_Path(&path)) && path) {
+                                                        // Escape backslashes for JavaScript string
+                                                        std::wstring escapedPath;
+                                                        for (const wchar_t* p = path.get(); *p; ++p) {
+                                                            if (*p == L'\\') {
+                                                                escapedPath += L"\\\\";
+                                                            } else if (*p == L'"') {
+                                                                escapedPath += L"\\\"";
+                                                            } else {
+                                                                escapedPath += *p;
+                                                            }
+                                                        }
+                                                        // Send file path back to JavaScript
+                                                        std::wstring script = L"window.deskgap._setFilePathFromNative(" +
+                                                            std::to_wstring(i) + L", \"" +
+                                                            escapedPath + L"\");";
+                                                        webview->ExecuteScript(script.c_str(), nullptr);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
                                     PWSTR message;
                                     args->TryGetWebMessageAsString(&message);
                                     this->callbacks.onStringMessage(WStringToUTF8(message));

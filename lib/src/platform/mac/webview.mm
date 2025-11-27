@@ -18,11 +18,43 @@ namespace {
     NSArray<NSString*>* const ObservedWKWebViewKeyPaths = @[ @"title" ];
     NSString* const StringMessageHandlerName = @"stringMessage";
     NSString* const WindowDragHandlerName = @"windowDrag";
+    NSString* const FileDropHandlerName = @"fileDrop";
     NSString* const localURLScheme = @"deskgap-local";
 }
 
-@interface DeskGapWebView: WKWebView @end
+@interface DeskGapWebView: WKWebView
+@property (nonatomic, strong) NSArray<NSURL*>* lastDroppedFileURLs;
+@end
 @implementation DeskGapWebView
+
+- (instancetype)initWithFrame:(CGRect)frame configuration:(WKWebViewConfiguration *)configuration {
+    self = [super initWithFrame:frame configuration:configuration];
+    if (self) {
+        // Register for file drag types
+        [self registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
+        _lastDroppedFileURLs = nil;
+    }
+    return self;
+}
+
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+    NSPasteboard* pboard = [sender draggingPasteboard];
+    if ([[pboard types] containsObject:NSPasteboardTypeFileURL]) {
+        return NSDragOperationCopy;
+    }
+    return NSDragOperationNone;
+}
+
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+    NSPasteboard* pboard = [sender draggingPasteboard];
+    if ([[pboard types] containsObject:NSPasteboardTypeFileURL]) {
+        NSArray<NSURL*>* fileURLs = [pboard readObjectsForClasses:@[[NSURL class]] options:@{NSPasteboardURLReadingFileURLsOnlyKey: @YES}];
+        if (fileURLs && [fileURLs count] > 0) {
+            self.lastDroppedFileURLs = fileURLs;
+        }
+    }
+    return YES;
+}
 
 - (void)deskgap_toggleDevTools: (id)sender {
     BOOL isDevToolsEnabled = ![[self.configuration.preferences valueForKey: @"developerExtrasEnabled"] boolValue];
@@ -112,6 +144,27 @@ namespace {
             [(DeskGapWindow*)window deskgap_startDragging];
         }
     }
+    else if ([message.name isEqualToString: FileDropHandlerName]) {
+        // Handle file drop - extract file paths from the webview's tracked dropped files
+        DeskGapWebView* deskgapWebView = (DeskGapWebView*)message.webView;
+        NSArray<NSURL*>* droppedURLs = deskgapWebView.lastDroppedFileURLs;
+        
+        if (droppedURLs && [droppedURLs count] > 0) {
+            // Build JavaScript to set file paths
+            for (NSUInteger i = 0; i < [droppedURLs count]; i++) {
+                NSURL* fileURL = droppedURLs[i];
+                NSString* filePath = [fileURL path];
+                // Escape the path for JavaScript
+                NSString* escapedPath = [filePath stringByReplacingOccurrencesOfString:@"\\" withString:@"\\\\"];
+                escapedPath = [escapedPath stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
+                
+                NSString* script = [NSString stringWithFormat:@"window.deskgap._setFilePathFromNative(%lu, \"%@\");", (unsigned long)i, escapedPath];
+                [message.webView evaluateJavaScript:script completionHandler:nil];
+            }
+        }
+        // Clear the tracked URLs
+        deskgapWebView.lastDroppedFileURLs = nil;
+    }
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey, id> *)change context:(void *)context {
@@ -168,7 +221,7 @@ namespace DeskGap {
 
         [configuration.preferences setValue:@YES forKey:@"allowFileAccessFromFileURLs"];
 
-        for (NSString* handlerName in @[StringMessageHandlerName, WindowDragHandlerName]) {
+        for (NSString* handlerName in @[StringMessageHandlerName, WindowDragHandlerName, FileDropHandlerName]) {
             [configuration.userContentController
                 addScriptMessageHandler: webviewDelegate
                 name: handlerName

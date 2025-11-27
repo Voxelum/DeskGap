@@ -266,8 +266,10 @@ namespace DeskGap {
         }
         fileURIs.clear();
     }
-    void WebView::Impl::HandleDragDataReceived(GtkWidget*, GdkDragContext*, gint, gint, 
-                                                GtkSelectionData* data, guint, guint, WebView* webView) {
+    void WebView::Impl::HandleDragDataReceived(GtkWidget* /* widget */, GdkDragContext* /* context */, 
+                                                gint /* x */, gint /* y */, 
+                                                GtkSelectionData* data, guint /* info */, guint /* time */, 
+                                                WebView* webView) {
         gchar** uris = gtk_selection_data_get_uris(data);
         if (uris) {
             webView->impl_->lastDroppedFileURIs.clear();

@@ -153,10 +153,13 @@ namespace {
             // Build JavaScript to set file paths
             for (NSUInteger i = 0; i < [droppedURLs count]; i++) {
                 NSURL* fileURL = droppedURLs[i];
+                // Verify this is a file URL for security
+                if (![fileURL isFileURL]) {
+                    continue;
+                }
                 NSString* filePath = [fileURL path];
-                // Escape the path for JavaScript
-                NSString* escapedPath = [filePath stringByReplacingOccurrencesOfString:@"\\" withString:@"\\\\"];
-                escapedPath = [escapedPath stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
+                // Escape double quotes for JavaScript string (macOS paths use forward slashes)
+                NSString* escapedPath = [filePath stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
                 
                 NSString* script = [NSString stringWithFormat:@"window.deskgap._setFilePathFromNative(%lu, \"%@\");", (unsigned long)i, escapedPath];
                 [message.webView evaluateJavaScript:script completionHandler:nil];

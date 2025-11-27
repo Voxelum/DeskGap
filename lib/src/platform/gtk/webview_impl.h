@@ -2,6 +2,7 @@
 #define gtk_webview_impl_h
 
 #include <optional>
+#include <vector>
 #include <webkit2/webkit2.h>
 
 #include "webview.hpp"
@@ -30,6 +31,15 @@ namespace DeskGap {
 
 		gulong scriptStringMessageConnection;
 		static void HandleScriptStringMessage(WebKitUserContentManager*, WebKitJavascriptResult*, WebView*);
+
+		gulong scriptFileDropConnection;
+		static void HandleScriptFileDrop(WebKitUserContentManager*, WebKitJavascriptResult*, WebView*);
+		
+		// Store last dropped file URIs for path extraction
+		std::vector<std::string> lastDroppedFileURIs;
+		
+		gulong dragDataReceivedConnection;
+		static void HandleDragDataReceived(GtkWidget*, GdkDragContext*, gint, gint, GtkSelectionData*, guint, guint, WebView*);
 		
 		gulong titleChangedConnection;
 		static void HandleTitleChanged(GObject*, GParamSpec* pspec, WebView*);

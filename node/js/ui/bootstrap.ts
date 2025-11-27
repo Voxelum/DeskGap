@@ -5,6 +5,9 @@ interface InternalDeskGap {
     //These 2 are previously defined in a platform-specific manner.
     platform: string;
     postStringMessage: (message: string) => void;
+    
+    //Get file path from a File object (from drag-and-drop)
+    getPathForFile: (file: File) => string;
 
     //This is to be defined in this file.
     messageReceived: (channelName: string, args: any[]) => void;

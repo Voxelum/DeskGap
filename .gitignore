@@ -9,3 +9,4 @@ node_modules
 .DS_Store
 /node/dist_build
 /dists
+_codeql_detected_source_root

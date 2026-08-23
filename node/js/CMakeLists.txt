@@ -29,8 +29,3 @@ add_custom_command(
 bin2code(${CMAKE_CURRENT_BINARY_DIR}/dg_ui.js ${CMAKE_CURRENT_BINARY_DIR}/dg_ui.c)
 
 add_library(DeskGapNodeScripts OBJECT ${CMAKE_CURRENT_BINARY_DIR}/dg_node.c ${CMAKE_CURRENT_BINARY_DIR}/dg_ui.c)
-
-if("${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
-    bin2code(${DG_NODE_MODULES_DIR}/es6-promise/dist/es6-promise.auto.min.js ${CMAKE_CURRENT_BINARY_DIR}/es6_promise_auto_min.c)
-    target_sources(DeskGapNodeScripts PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/es6_promise_auto_min.c)
-endif ()

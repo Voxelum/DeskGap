@@ -1,0 +1,51 @@
+<!doctype html>
+<script>
+;(async () => {
+    const echo = await window.deskgap.invoke('test.echo', { message: 'hello' })
+    let failure
+    try {
+        await window.deskgap.invoke('test.fail')
+    } catch (error) {
+        failure = {
+            code: error.code,
+            details: error.details,
+            message: error.message,
+            name: error.name,
+            remoteName: error.remoteName,
+        }
+    }
+
+    await window.deskgap.invoke('test.remove')
+    let removedRemoteName
+    try {
+        await window.deskgap.invoke('test.echo', null)
+    } catch (error) {
+        removedRemoteName = error.remoteName
+    }
+
+    const controller = new AbortController()
+    const waiting = window.deskgap.invoke('test.wait', null, { signal: controller.signal })
+    while (!await window.deskgap.invoke('test.wait-started')) {
+        await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    controller.abort()
+    let abortRejected = false
+    try {
+        await waiting
+    } catch (_) {
+        abortRejected = true
+    }
+    await new Promise(resolve => setTimeout(resolve, 50))
+
+    await window.deskgap.invoke('test.complete', {
+        abortRejected,
+        echoed: echo.echoed,
+        failure,
+        navigationGeneration: echo.navigationGeneration,
+        removedRemoteName,
+    })
+})().catch(error => {
+    console.error(error.stack)
+    document.title = `failed: ${error.stack}`
+})
+</script>

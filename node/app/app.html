@@ -6,12 +6,127 @@
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <title>DeskGap API Demo</title>
     <link rel="stylesheet" href="app.css" />
-    <script type="text/javascript">
-    var defaultService = { }
-    deskgap.publishServices({ '': defaultService });
-    </script>
 </head>
-<body style="background-color: rgba(0, 0, 0, 0.1);">
+<body>
+    <header data-deskgap-drag>
+        <div>
+            <span class="eyebrow">DESKGAP SAMPLE APP</span>
+            <h1>Electron parity verification</h1>
+            <p>Runs the portable compatibility surface through the real renderer-to-main transport.</p>
+        </div>
+        <button id="run-tests" data-deskgap-no-drag>Run again</button>
+    </header>
+    <main class="parity-main">
+        <section class="summary" aria-live="polite">
+            <div>
+                <span class="summary-label">Status</span>
+                <strong id="status">Running</strong>
+            </div>
+            <div>
+                <span class="summary-label">Passed</span>
+                <strong id="passed">0</strong>
+            </div>
+            <div>
+                <span class="summary-label">Failed</span>
+                <strong id="failed">0</strong>
+            </div>
+            <div>
+                <span class="summary-label">Platform</span>
+                <strong id="platform">-</strong>
+            </div>
+        </section>
+
+        <section class="results-section">
+            <div class="section-heading">
+                <h2>Automated smoke tests</h2>
+                <span id="last-run"></span>
+            </div>
+            <div id="test-results" class="test-results"></div>
+        </section>
+
+        <section class="native-actions">
+            <div class="section-heading">
+                <h2>Native window checks</h2>
+                <span>Confirm each transition visually</span>
+            </div>
+            <div class="action-bar">
+                <button data-window-method="minimize">Minimize</button>
+                <button data-window-method="maximize">Maximize</button>
+                <button data-window-method="unmaximize">Unmaximize</button>
+                <button data-window-method="restore">Restore</button>
+                <button data-window-method="setFullScreen" data-window-args="[true]">Enter fullscreen</button>
+                <button data-window-method="setFullScreen" data-window-args="[false]">Leave fullscreen</button>
+                <button data-window-method="flashFrame" data-window-args="[true]">Flash frame</button>
+                <button data-window-method="flashFrame" data-window-args="[false]">Stop flashing</button>
+            </div>
+            <p id="action-result" class="action-result" aria-live="polite"></p>
+        </section>
+    </main>
+
+    <script type="text/javascript">
+    (function() {
+        var runButton = document.getElementById('run-tests');
+        var results = document.getElementById('test-results');
+        var status = document.getElementById('status');
+
+        function renderDetails(details) {
+            if (details == null) return '';
+            return '<pre>' + escapeHtml(JSON.stringify(details, null, 2)) + '</pre>';
+        }
+
+        function escapeHtml(value) {
+            return value.replace(/[&<>"']/g, function(character) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[character];
+            });
+        }
+
+        function runTests() {
+            runButton.disabled = true;
+            status.textContent = 'Running';
+            status.className = 'running';
+            results.innerHTML = '<p class="empty-state">Executing checks...</p>';
+
+            deskgap.invoke('parity.run').then(function(report) {
+                document.getElementById('passed').textContent = report.passed;
+                document.getElementById('failed').textContent = report.failed;
+                document.getElementById('platform').textContent = report.platform;
+                document.getElementById('last-run').textContent = new Date().toLocaleTimeString();
+                status.textContent = report.failed === 0 ? 'All passed' : 'Failures found';
+                status.className = report.failed === 0 ? 'passed' : 'failed';
+                results.innerHTML = report.tests.map(function(test) {
+                    var details = test.status === 'passed' ? renderDetails(test.details) : '<pre>' + escapeHtml(test.error) + '</pre>';
+                    return '<article class="test-row ' + test.status + '">' +
+                        '<span class="indicator" aria-hidden="true"></span>' +
+                        '<div><h3>' + escapeHtml(test.name) + '</h3>' + details + '</div>' +
+                        '<span class="duration">' + test.durationMs + ' ms</span>' +
+                    '</article>';
+                }).join('');
+            }).catch(function(error) {
+                status.textContent = 'Transport failed';
+                status.className = 'failed';
+                results.innerHTML = '<pre class="fatal-error">' + escapeHtml(error.message || String(error)) + '</pre>';
+            }).then(function() {
+                runButton.disabled = false;
+            });
+        }
+
+        Array.prototype.forEach.call(document.querySelectorAll('[data-window-method]'), function(button) {
+            button.addEventListener('click', function() {
+                var method = button.getAttribute('data-window-method');
+                var args = JSON.parse(button.getAttribute('data-window-args') || '[]');
+                deskgap.invoke('demo.window', { method: method, args: args }).then(function() {
+                    document.getElementById('action-result').textContent = method + ' completed';
+                }).catch(function(error) {
+                    document.getElementById('action-result').textContent = method + ': ' + error.message;
+                });
+            });
+        });
+
+        runButton.addEventListener('click', runTests);
+        runTests();
+    })();
+    </script>
+
     <!-- <ul class="sidebar">
         <div style="height: 28px;" data-deskgap-drag></div>
         <ol><a href="#h-menu">Menu</a></ol>
@@ -32,8 +147,8 @@ contextMenu.popup(browserWindow);
             <script type="text/javascript">
             var itemLabel = document.getElementById('context-menu-item-label').value;
             function popupContextMenu() {
-                deskgap.getService('').send(
-                    'execute',
+                deskgap.invoke(
+                    'demo.execute',
                     "const contextMenu = require('deskgap').Menu.buildFromTemplate([{ label: " + JSON.stringify(itemLabel) + " }]);contextMenu.popup(browserWindow);"
                 );
             }
@@ -49,8 +164,8 @@ shell.buildFromTemplate('<input id="shell-open-folder-label" value="C:/Users/" /
             </code></pre>
             <script type="text/javascript">
             function showItemInFolder() {
-                deskgap.getService('').send(
-                    'execute',
+                deskgap.invoke(
+                    'demo.execute',
                     `require('deskgap').shell.showItemInFolder("${document.getElementById('shell-open-folder-label').value}");`
                 );
             }
@@ -70,7 +185,7 @@ dialog.showErrorBox('<input id="error-box-title" value="Title" />', '<input id="
             function showErrorBox() {
                 var title = document.getElementById('error-box-title').value;
                 var content = document.getElementById('error-box-content').value;
-                deskgap.getService('dialog').send('showErrorBox', title, content);
+                deskgap.invoke('demo.show-error-box', { title: title, content: content });
             }
             </script>
 
@@ -91,8 +206,8 @@ await dialog.showOpenDialogAsync(browserWindow, {
                         properties.push('multiSelections');
                     }
                     
-                deskgap.getService('').call(
-                    'execute',
+                deskgap.invoke(
+                    'demo.execute',
                     "return require('deskgap').dialog.showOpenDialogAsync(browserWindow, { properties: " + JSON.stringify(properties) +"});"
                 ).then(function(result) {
                         document.getElementById('open-dialog-result').textContent = JSON.stringify(result, null, 4);
@@ -109,8 +224,8 @@ await dialog.showSaveDialogAsync(browserWindow, { })
             <span class="result" id="save-dialog-result"></span>
             <script type="text/javascript">
                 function showSaveDialogAsync() {
-                    deskgap.getService('').call(
-                        'execute',
+                    deskgap.invoke(
+                        'demo.execute',
                         "return require('deskgap').dialog.showSaveDialogAsync(browserWindow, { })"
                     ).then(function(result) {
                         document.getElementById('save-dialog-result').textContent = JSON.stringify(result, null, 4);
@@ -144,9 +259,7 @@ browserWindow.on('focus', () => console.log('Focused'));
             <script type="text/javascript">
             (function() {
                 var $lastOutput = document.getElementById('window-events-output');
-                defaultService['windowEvent'] = function (eventName) {
-                    $lastOutput.textContent = eventName === "blur" ? "Not Focused": "Focused";
-                }
+                $lastOutput.textContent = 'Use BrowserWindow blur/focus handlers in the main process.';
             })();
             </script>
 
@@ -162,22 +275,18 @@ browserWindow.center();<button onclick="centerWindow();">Run</button>
                 var width = parseInt(document.getElementById('window-width').value, 10);
                 var height = parseInt(document.getElementById('window-height').value, 10);
                 if (isNaN(width) || isNaN(height)) return;
-                deskgap.getService('browserWindow').send(
-                    'setSize', width, height
-                )
+                deskgap.invoke('demo.window', { method: 'setSize', args: [width, height] })
             }
             function setWindowPos() {
                 var x = parseInt(document.getElementById('window-x').value, 10);
                 var y = parseInt(document.getElementById('window-y').value, 10);
                 if (isNaN(x) || isNaN(y)) return;
 
-                deskgap.getService('browserWindow').send(
-                    'setPosition', x, y
-                )
+                deskgap.invoke('demo.window', { method: 'setPosition', args: [x, y] })
                 // asyncNode.getCurrentWindow().invoke('setPosition', x, y).value();
             }
             function centerWindow() {
-                deskgap.getService('browserWindow').send('center')
+                deskgap.invoke('demo.window', { method: 'center' })
             }
             </script>
 
@@ -196,7 +305,7 @@ browserWindow.setTitleBarStyle('<select id="title-bar-style-select">
                 var $select = document.getElementById('title-bar-style-select');
                 $select.addEventListener('change', function() {
                     var selectedValue = $select.options[$select.selectedIndex].value;
-                    deskgap.getService('browserWindow').send('setTitleBarStyle', selectedValue)
+                    deskgap.invoke('demo.window', { method: 'setTitleBarStyle', args: [selectedValue] })
                 });
                 $select.disabled = deskgap.platform !== 'darwin';
             })();
@@ -222,10 +331,10 @@ browserWindow.setVibrancies([
                     else {
                         document.body.classList.remove('sidebar-vibrancy');
                     }
-                    deskgap.getService('browserWindow').send('setVibrancies', [
+                    deskgap.invoke('demo.window', { method: 'setVibrancies', args: [[
                         $sidebarVibrancy.checked ? { 'material': 'sidebar', left: 0, top: 0, bottom: 0, width: 200 }: null,
                         $backgroundVibrancy.checked ? { 'material': 'under-window-background', left: 200, top: 0, bottom: 0, right: 0 }: null
-                    ]);
+                    ]] });
                 }
 
                 $sidebarVibrancy.addEventListener('change', setWindowVibrancies);

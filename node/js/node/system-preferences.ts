@@ -27,6 +27,8 @@ export interface SystemPreferenceEvents extends IEventMap {
     'dark-mode-toggled': []
 }
 
+export type MediaAccessType = 'microphone' | 'camera' | 'screen';
+
 export class SystemPreference extends EventEmitter<SystemPreferenceEvents> {
     /** @internal */ private isDarkMode_: boolean;
     constructor() {
@@ -47,6 +49,15 @@ export class SystemPreference extends EventEmitter<SystemPreferenceEvents> {
     }
     isDarkMode(): boolean {
         return this.isDarkMode_;
+    }
+    askForMediaAccess(mediaType: MediaAccessType): Promise<boolean> {
+        if (!['microphone', 'camera', 'screen'].includes(mediaType)) {
+            return Promise.reject(new TypeError(`Unsupported media type: ${mediaType}`));
+        }
+        return new Promise(resolve => native.askForMediaAccess(mediaType, resolve));
+    }
+    isTrustedAccessibilityClient(prompt: boolean): boolean {
+        return native.isTrustedAccessibilityClient(prompt);
     }
 }
 

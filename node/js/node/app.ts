@@ -2,13 +2,39 @@ import { Menu, MenuTypeCode } from './menu';
 import defaultMenuTemplate from './internal/menu/default-template';
 import appInfo from './internal/app-info'
 import appPath from './internal/app-path'
+import { embeddedAppIdentity } from './internal/app-identity';
 
 import globals from './internal/globals';
 import { EventEmitter, IEventMap } from './internal/events';
 import { bulkUISync } from './internal/dispatch';
 
 import path = require('path');
+import { spawn } from 'child_process';
 import { AppNative, appNative } from './internal/native';
+import type { BrowserWindow } from './browser-window';
+import { CommandLine } from './command-line';
+
+export interface RelaunchOptions {
+    args?: string[];
+    execPath?: string;
+}
+
+export class Dock {
+    /** @internal */ constructor(private readonly native_: AppNative) {}
+
+    hide(): void {
+        this.native_.setDockVisible(false);
+    }
+
+    show(): Promise<void> {
+        if (!this.native_.setDockVisible(true)) return Promise.reject(new Error('Failed to show the application dock icon'));
+        return Promise.resolve();
+    }
+
+    isVisible(): boolean {
+        return this.native_.isDockVisible();
+    }
+}
 
 const pathNameValues = {
     'appData': 0,
@@ -21,6 +47,11 @@ const pathNameValues = {
     'videos': 7,
     'home': 8,
     'userData': -1,
+    'exe': -2,
+    'logs': -3,
+    'localData': -4,
+    'sessionData': -5,
+    'cache': -6,
 };
 
 export type PathName = keyof typeof pathNameValues;
@@ -44,7 +75,10 @@ export interface AppEvents extends IEventMap {
     'will-quit': [],
     'before-quit': [],
 
-    'second-instance': [string[], string]
+    'second-instance': [string[], string],
+    'browser-window-created': [BrowserWindow],
+    'activate': [],
+    'open-url': [string],
     /**
      * Emitted when the application is quitting.
      * @param 0 [[IEventObject]]
@@ -62,6 +96,9 @@ export interface AppEvents extends IEventMap {
 
 export class App extends EventEmitter<AppEvents> {
 
+    readonly commandLine = new CommandLine();
+    readonly dock: Dock | undefined;
+
     /** @internal */ private isReady_ = false;
     /** @internal */ private triggersWindowAllClosed_ = true;
     /** @internal */ private whenReady_: Promise<void>;
@@ -73,9 +110,11 @@ export class App extends EventEmitter<AppEvents> {
     constructor() {
         super();
 
+        this.native_ = appNative;
+        this.dock = process.platform === 'darwin' ? new Dock(this.native_) : undefined;
+
         this.whenReady_ = new Promise((resolve) => {
             this.resolveWhenReady_ = resolve;
-            this.native_ = appNative;
         });
     }
 
@@ -101,7 +140,9 @@ export class App extends EventEmitter<AppEvents> {
             //which actually exits the app by default and can be prevented by event handlers.
             beforeQuit: () => {
                 this.quit();
-            }
+            },
+            onActivate: () => this.trigger_('activate'),
+            onOpenURL: (url: string) => this.trigger_('open-url', null, url)
         });
 
         require(appPath);
@@ -114,6 +155,11 @@ export class App extends EventEmitter<AppEvents> {
                 this.quit();
             }
         }
+    }
+
+    /** @internal */
+    private notifyBrowserWindowCreated_(browserWindow: BrowserWindow) {
+        this.trigger_('browser-window-created', null, browserWindow);
     }
 
     getAppPath(): string {
@@ -130,6 +176,14 @@ export class App extends EventEmitter<AppEvents> {
 
     getLocale() {
         return this.native_.getLocale();
+    }
+
+    getSystemLocale() {
+        return this.native_.getLocale().split('.')[0].replace(/_/g, '-');
+    }
+
+    setAppUserModelId(id: string): void {
+        this.native_.setAppUserModelId(id);
     }
 
     hasSingleInstanceLock() {
@@ -179,6 +233,22 @@ export class App extends EventEmitter<AppEvents> {
         process.exit(code);
     }
 
+    relaunch(options: RelaunchOptions = {}): void {
+        const executablePath = options.execPath == null
+            ? this.native_.getExecutablePath()
+            : path.resolve(options.execPath);
+        const args = options.args == null ? process.argv.slice(1) : options.args.slice();
+        process.once('exit', () => {
+            const child = spawn(executablePath, args, {
+                detached: true,
+                env: process.env,
+                stdio: 'ignore',
+                windowsHide: true,
+            });
+            child.unref();
+        });
+    }
+
     whenReady(): Promise<void> {
         return this.whenReady_;
     }
@@ -208,7 +278,26 @@ export class App extends EventEmitter<AppEvents> {
         let result = this.pathCache_.get(name);
         if (result == null) {
             if (name === 'userData') {
-                result = path.join(this.getPath('appData'), this.getName());
+                result = path.join(this.getPath('appData'), embeddedAppIdentity.storageName);
+            }
+            else if (name === 'localData') {
+                result = path.join(this.native_.getPath(9), embeddedAppIdentity.storageName);
+            }
+            else if (name === 'sessionData') {
+                result = path.join(this.getPath('localData'), 'Sessions');
+            }
+            else if (name === 'cache') {
+                result = path.join(
+                    this.native_.getPath(10),
+                    embeddedAppIdentity.storageName,
+                    ...(process.platform === 'win32' ? ['Cache'] : []),
+                );
+            }
+            else if (name === 'exe') {
+                result = this.native_.getExecutablePath();
+            }
+            else if (name === 'logs') {
+                result = path.join(this.getPath('localData'), 'Logs');
             }
             else {
                 const pathNameValue = pathNameValues[name];

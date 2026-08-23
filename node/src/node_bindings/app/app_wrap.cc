@@ -14,12 +14,22 @@ Napi::Object DeskGap::AppWrap::AppObject(const Napi::Env& env) {
         Napi::Object jsCallbacks = info[0].As<Napi::Object>();
         auto jsOnReady = JSFunctionForUI::Persist(jsCallbacks.Get("onReady").As<Napi::Function>());
         auto jsBeforeQuit = JSFunctionForUI::Persist(jsCallbacks.Get("beforeQuit").As<Napi::Function>());
+        auto jsOnActivate = JSFunctionForUI::Persist(jsCallbacks.Get("onActivate").As<Napi::Function>());
+        auto jsOnOpenURL = JSFunctionForUI::Persist(jsCallbacks.Get("onOpenURL").As<Napi::Function>());
         DeskGap::AppStartup::SignalAppRun({
               [jsOnReady { std::move(jsOnReady) }]() {
                   jsOnReady->Call();
               },
               [jsBeforeQuit { std::move(jsBeforeQuit) }]() {
                   jsBeforeQuit->Call();
+              },
+              [jsOnActivate { std::move(jsOnActivate) }]() {
+                  jsOnActivate->Call();
+              },
+              [jsOnOpenURL { std::move(jsOnOpenURL) }](const std::string& url) {
+                  jsOnOpenURL->Call([url](auto env) -> std::vector<napi_value> {
+                      return { Napi::String::New(env, url) };
+                  });
               }
         });
     }));
@@ -27,6 +37,21 @@ Napi::Object DeskGap::AppWrap::AppObject(const Napi::Env& env) {
     appObject.Set("getLocale", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
         auto result = DeskGap::App::GetLocale();
         return JSFrom(info.Env(), result);
+    }));
+
+    appObject.Set("getExecutablePath", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+        return JSFrom(info.Env(), DeskGap::App::GetExecutablePath());
+    }));
+
+    appObject.Set("setAppUserModelId", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+        DeskGap::App::SetAppUserModelId(info[0].As<Napi::String>().Utf8Value());
+    }));
+
+    appObject.Set("setDockVisible", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+        return Napi::Boolean::New(info.Env(), DeskGap::App::SetDockVisible(info[0].As<Napi::Boolean>().Value()));
+    }));
+    appObject.Set("isDockVisible", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+        return Napi::Boolean::New(info.Env(), DeskGap::App::IsDockVisible());
     }));
 
     appObject.Set("isDefaultProtocolClient", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {

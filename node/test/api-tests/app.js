@@ -1,9 +1,9 @@
 const { app } = require('deskgap');
-const chai = require('chai');
+const assert = require('node:assert/strict');
+const { describe, it } = require('node:test');
 const { spawnDeskGapAppAsync } = require('../utils');
 const fs = require('fs');
-
-const { expect } = chai;
+const path = require('path');
 
 describe('process', () => {
     describe('process.argv', () => {
@@ -13,13 +13,13 @@ describe('process', () => {
                 process.stdout.write(process.argv[2] + process.argv[3]);
                 app.exit();
             `, 'hello', '你好');
-            expect(result.stdout).to.equal('hello你好');
+            assert.equal(result.stdout, 'hello你好');
         });
     });
     describe('process.versions.deskgap', () => {
         it('returns the version of DeskGap', () => {
             const versionFromSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'VERSION'), 'utf8');
-            expect(process.versions.deskgap).to.equal(versionFromSource);
+            assert.equal(process.versions.deskgap, versionFromSource);
         })
     });
 });
@@ -27,35 +27,94 @@ describe('process', () => {
 describe('app module', () => {
     describe('app.getVersion', () => {
         it('returns the version field of package.json', () => {
-            expect(app.getVersion()).to.equal('0.0.1')
+            assert.equal(app.getVersion(), '0.0.1')
         })
     });
     describe('app.setVersion(version)', () => {
         it('overrides the version', () => {
-            expect(app.getVersion()).to.equal('0.0.1')
+            assert.equal(app.getVersion(), '0.0.1')
             app.setVersion('test-version')
 
-            expect(app.getVersion()).to.equal('test-version')
+            assert.equal(app.getVersion(), 'test-version')
             app.setVersion('0.0.1')
         })
     });
 
     describe('app.getName()', () => {
         it('returns the name field of package.json if productName does not exists', () => {
-            expect(app.getName()).to.equal('DeskGap Test');
+            assert.equal(app.getName(), 'DeskGap Test');
         });
         it('returns the productName field of package.json if both name and productName exists', async () => {
             const spawnResult = await spawnDeskGapAppAsync('app-with-product-name');
-            expect(spawnResult.stdout).to.equal('package.productName');
+            assert.equal(spawnResult.stdout, 'package.productName');
+        });
+    });
+
+    describe('locale and paths', () => {
+        it('provides the system locale and Electron executable/log path names', () => {
+            assert.equal(typeof app.getSystemLocale(), 'string');
+            assert.equal(app.getSystemLocale().length > 0, true);
+            assert.equal(path.isAbsolute(app.getPath('exe')), true);
+            assert.equal(app.getPath('logs'), path.join(app.getPath('userData'), 'logs'));
+            assert.doesNotThrow(() => app.setAppUserModelId('com.deskgap.test'));
+        });
+    });
+
+    describe('browser-window-created event', () => {
+        it('emits after the window is registered', () => {
+            let createdWindow;
+            app.once('browser-window-created', (_, browserWindow) => {
+                createdWindow = browserWindow;
+                assert.equal(BrowserWindow.fromId(browserWindow.id), browserWindow);
+            });
+            const browserWindow = new BrowserWindow({ show: false });
+            try {
+                assert.equal(createdWindow, browserWindow);
+            }
+            finally {
+                browserWindow.destroy();
+            }
+        });
+    });
+
+    describe('app.relaunch()', () => {
+        it('starts a replacement process after exit', async () => {
+            const directory = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'deskgap-relaunch-'));
+            const markerPath = path.join(directory, 'relaunched');
+            const code = `
+                const { app } = require('deskgap');
+                const fs = require('fs');
+                if (process.argv[2] === '--relaunched') {
+                    fs.writeFileSync(process.argv[3], 'ok');
+                    app.exit();
+                } else {
+                    app.once('ready', () => {
+                        app.relaunch({ args: [process.argv[1], '--relaunched', ${JSON.stringify(markerPath)}] });
+                        app.exit();
+                    });
+                }
+            `;
+
+            try {
+                await spawnDeskGapAppAsync('arbitrary-code', code);
+                const deadline = Date.now() + 5000;
+                while (!fs.existsSync(markerPath) && Date.now() < deadline) {
+                    await new Promise(resolve => setTimeout(resolve, 25));
+                }
+                assert.equal(fs.readFileSync(markerPath, 'utf8'), 'ok');
+            }
+            finally {
+                fs.rmSync(directory, { force: true, recursive: true });
+            }
         });
     });
 
     describe('app.setName(name)', () => {
         it('overrides the name', () => {
-            expect(app.getName()).to.equal('DeskGap Test')
+            assert.equal(app.getName(), 'DeskGap Test')
             app.setName('test-name')
         
-            expect(app.getName()).to.equal('test-name')
+            assert.equal(app.getName(), 'test-name')
             app.setName('DeskGap Test')
         })
     });
@@ -71,9 +130,9 @@ describe('app module', () => {
                     process.stdout.write('Exit event with code: ' + code);
                 });
             `).catch(e => e);
-            expect(error).to.be.an.instanceof(Error);
-            expect(error.result.code).to.equal(123);
-            expect(error.result.stdout).to.equal('Exit event with code: 123');
+            assert.ok(error instanceof Error);
+            assert.equal(error.result.code, 123);
+            assert.equal(error.result.stdout, 'Exit event with code: 123');
         });
 
         it('emits a quit event but the before-quit and will-quit events will not be emitted', async () => {
@@ -86,7 +145,7 @@ describe('app module', () => {
                     app.exit();
                 });
             `);
-            expect(result.stdout).to.equal('quit');
+            assert.equal(result.stdout, 'quit');
         });
 
         it('closes all windows without asking', async () => {
@@ -109,18 +168,18 @@ describe('app module', () => {
                     app.exit();
                 });
             `);
-            expect(result.stdout).to.equal("");
+            assert.equal(result.stdout, "");
         });
     });
 
     describe('app.whenReady', () => {
         it('returns a Promise', () => {
-          expect(app.whenReady()).to.be.instanceof(Promise);
+          assert.ok(app.whenReady() instanceof Promise);
         });
     
-        it('becomes fulfilled if the app is already ready', () => {
-          expect(app.isReady()).to.equal(true);
-          return expect(app.whenReady()).to.be.eventually.fulfilled;
+                it('becomes fulfilled if the app is already ready', async () => {
+                    assert.equal(app.isReady(), true);
+                    await app.whenReady();
         });
     });
 
@@ -136,7 +195,7 @@ describe('app module', () => {
                     process.stdout.write('after all window closed');
                 });
             `);
-            expect(result.stdout).to.equal('');
+            assert.equal(result.stdout, '');
         });
         it('prevents app to be closed automatically when all windows closed if there is any subscriber', async () => {
             const result = await spawnDeskGapAppAsync('arbitrary-code', `
@@ -154,7 +213,7 @@ describe('app module', () => {
                     process.stdout.write('quitted');
                 });
             `);
-            expect(result.stdout).to.equal('emitted prevented');
+            assert.equal(result.stdout, 'emitted prevented');
         });
     });
 
@@ -175,7 +234,7 @@ describe('app module', () => {
                     app.quit();
                 });
             `);
-            expect(result.stdout).to.equal("01234");
+            assert.equal(result.stdout, "01234");
         })
 
         it('does not try to close windows if prevented in before-quit', async () => {
@@ -194,7 +253,7 @@ describe('app module', () => {
                     app.quit();
                 });
             `);
-            expect(result.stdout).to.equal('preventing close,closing window');
+            assert.equal(result.stdout, 'preventing close,closing window');
         });
 
         it('does not quit the app if prevented by one of windows', async () => {
@@ -211,7 +270,7 @@ describe('app module', () => {
                     app.quit();
                 });
             `);
-            expect(result.stdout).to.equal('preventing close');
+            assert.equal(result.stdout, 'preventing close');
         });
 
         it('closes all windows but not quit the app if prevented in will-quit', async () => {
@@ -230,7 +289,7 @@ describe('app module', () => {
                     app.quit();
                 });
             `);
-            expect(result.stdout).to.equal('closing window,preventing close');
+            assert.equal(result.stdout, 'closing window,preventing close');
         });
 
         it('cannot be prevented in quit events', async () => {
@@ -243,7 +302,7 @@ describe('app module', () => {
                     app.quit();
                 });
             `);
-            expect(result.stdout).to.equal('');
+            assert.equal(result.stdout, '');
         });
     });
 });

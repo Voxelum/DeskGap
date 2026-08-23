@@ -1,6 +1,9 @@
 #import <Cocoa/Cocoa.h>
 #include <cmath>
+#include <algorithm>
+#include <cfloat>
 #include <unordered_map>
+#include <cstring>
 #include "./BrowserWindow_impl.h"
 #import "./util/NSScreen_geo.h"
 #import "./cocoa/DeskGapWindow.h"
@@ -16,12 +19,14 @@
 
 @implementation DeskGapBrowserWindowDelegate {
     DeskGap::BrowserWindow::EventCallbacks _callbacks;
+    BOOL _wasZoomed;
 }
 
 -(instancetype)initWithCallbacks: (DeskGap::BrowserWindow::EventCallbacks&) callbacks {
     self = [super init];
     if (self) {
         _callbacks = std::move(callbacks);
+        _wasZoomed = NO;
     }
     return self;
 }
@@ -33,18 +38,28 @@
 }
 - (void)windowDidResize:(NSNotification *)notification {
     _callbacks.onResize();
+    BOOL zoomed = [[notification object] isZoomed];
+    if (zoomed != _wasZoomed) {
+        _wasZoomed = zoomed;
+        if (zoomed) _callbacks.onMaximize();
+        else _callbacks.onUnmaximize();
+    }
 }
 - (void)windowWillEnterFullScreen:(NSNotification *)notification {
-    _callbacks.willEnterFullScreen();
+}
+- (void)windowDidMiniaturize:(NSNotification *)notification {
+    _callbacks.onMinimize();
+}
+- (void)windowDidDeminiaturize:(NSNotification *)notification {
+    _callbacks.onRestore();
 }
 - (void)windowDidEnterFullScreen:(NSNotification *)notification {
-    _callbacks.didEnterFullScreen();
+    _callbacks.onEnterFullScreen();
 }
 - (void)windowWillExitFullScreen:(NSNotification *)notification {
-    _callbacks.willExitFullScreen();
 }
 - (void)windowDidExitFullScreen:(NSNotification *)notification {
-    _callbacks.didExitFullScreen();
+    _callbacks.onLeaveFullScreen();
 }
 - (void)windowDidMove:(NSNotification *)notification {
     _callbacks.onMove();
@@ -149,14 +164,9 @@ namespace DeskGap {
             impl->UpdateTrafficLightPosition();
         };
 
-        callbacks.willExitFullScreen = [impl = impl_.get(), willExitFullScreen = std::move(callbacks.willExitFullScreen)]() {
-            willExitFullScreen();
-            impl->exitingFullScreen = true;
-            impl->UpdateTrafficLightPosition();
-        };
-
-        callbacks.didExitFullScreen = [impl = impl_.get(), didExitFullScreen = std::move(callbacks.didExitFullScreen)] {
-            didExitFullScreen();
+        auto onLeaveFullScreen = callbacks.onLeaveFullScreen;
+        callbacks.onLeaveFullScreen = [impl = impl_.get(), onLeaveFullScreen = std::move(onLeaveFullScreen)]() {
+            onLeaveFullScreen();
             impl->exitingFullScreen = false;
             impl->UpdateTrafficLightPosition();
         };
@@ -217,8 +227,30 @@ namespace DeskGap {
         impl_->SetStyleMask(closable, NSWindowStyleMaskClosable);
     }
 
+    void BrowserWindow::SetParent(const BrowserWindow* parent) {
+        NSWindow* currentParent = impl_->nsWindow.parentWindow;
+        if (currentParent != nil) [currentParent removeChildWindow:impl_->nsWindow];
+        if (parent != nullptr) [parent->impl_->nsWindow addChildWindow:impl_->nsWindow ordered:NSWindowAbove];
+    }
+
+    void BrowserWindow::SetModal(bool modal) {
+        [impl_->nsWindow setLevel:modal ? NSModalPanelWindowLevel : NSNormalWindowLevel];
+    }
+
     void BrowserWindow::Minimize() {
         [impl_->nsWindow miniaturize: nil];
+    }
+
+    void BrowserWindow::Restore() {
+        [impl_->nsWindow deminiaturize: nil];
+    }
+
+    void BrowserWindow::Maximize() {
+        if (![impl_->nsWindow isZoomed]) [impl_->nsWindow zoom: nil];
+    }
+
+    void BrowserWindow::Unmaximize() {
+        if ([impl_->nsWindow isZoomed]) [impl_->nsWindow zoom: nil];
     }
 
     namespace {
@@ -380,6 +412,49 @@ namespace DeskGap {
         [impl_->nsWindow makeKeyAndOrderFront: nil];
     }
 
+    void BrowserWindow::Hide() {
+        [impl_->nsWindow orderOut: nil];
+    }
+
+    void BrowserWindow::Focus() {
+        [NSApp activateIgnoringOtherApps: YES];
+        [impl_->nsWindow makeKeyAndOrderFront: nil];
+    }
+
+    bool BrowserWindow::IsVisible() {
+        return [impl_->nsWindow isVisible];
+    }
+
+    bool BrowserWindow::IsFocused() {
+        return [impl_->nsWindow isKeyWindow];
+    }
+
+    bool BrowserWindow::IsMinimized() {
+        return [impl_->nsWindow isMiniaturized];
+    }
+
+    bool BrowserWindow::IsMaximized() {
+        return [impl_->nsWindow isZoomed];
+    }
+
+    void BrowserWindow::SetFullScreen(bool fullScreen) {
+        if (fullScreen != IsFullScreen()) [impl_->nsWindow toggleFullScreen: nil];
+    }
+
+    bool BrowserWindow::IsFullScreen() {
+        return ([impl_->nsWindow styleMask] & NSWindowStyleMaskFullScreen) != 0;
+    }
+
+    void BrowserWindow::FlashFrame(bool flash) {
+        if (flash && impl_->attentionRequest == 0) {
+            impl_->attentionRequest = [NSApp requestUserAttention: NSCriticalRequest];
+        }
+        else if (!flash && impl_->attentionRequest != 0) {
+            [NSApp cancelUserAttentionRequest: impl_->attentionRequest];
+            impl_->attentionRequest = 0;
+        }
+    }
+
     void BrowserWindow::Center() {
         [impl_->nsWindow center];
     }
@@ -404,6 +479,13 @@ namespace DeskGap {
         [window setFrame: DeskGapNSScreenConvertRectFromVisiblePortion(screen, flippedFrame) display: YES animate: animate];
     }
 
+    void BrowserWindow::SetContentSize(int width, int height, bool animate) {
+        NSRect frame = [impl_->nsWindow frameRectForContentRect:NSMakeRect(0, 0, width, height)];
+        NSRect current = impl_->nsWindow.frame;
+        frame.origin = current.origin;
+        [impl_->nsWindow setFrame:frame display:YES animate:animate];
+    }
+
     void BrowserWindow::SetMaximumSize(int width, int height) {
         NSWindow* window = impl_->nsWindow;
         if (width == 0 && height == 0) {
@@ -415,6 +497,27 @@ namespace DeskGap {
     }
     void BrowserWindow::SetMinimumSize(int width, int height) {
         [impl_->nsWindow setMinSize: NSMakeSize(width, height)];
+    }
+
+    void BrowserWindow::SetAspectRatio(double ratio, int extraWidth, int extraHeight) {
+        if (ratio <= 0) {
+            [impl_->nsWindow setContentAspectRatio: NSMakeSize(0, 0)];
+            return;
+        }
+        NSSize contentSize = [[impl_->nsWindow contentView] frame].size;
+        double constrainedWidth = std::max(1.0, contentSize.width - extraWidth);
+        double constrainedHeight = std::max(1.0, contentSize.height - extraHeight);
+        double currentRatio = constrainedWidth / constrainedHeight;
+        [impl_->nsWindow setContentAspectRatio: currentRatio > ratio
+            ? NSMakeSize(ratio * constrainedHeight + extraWidth, constrainedHeight + extraHeight)
+            : NSMakeSize(constrainedWidth + extraWidth, constrainedWidth / ratio + extraHeight)];
+    }
+
+    std::vector<uint8_t> BrowserWindow::GetNativeWindowHandle() {
+        NSView* contentView = [impl_->nsWindow contentView];
+        std::vector<uint8_t> result(sizeof(contentView));
+        std::memcpy(result.data(), &contentView, sizeof(contentView));
+        return result;
     }
 
 
@@ -439,6 +542,18 @@ namespace DeskGap {
             (int)std::round(NSWidth(windowFrame)), 
             (int)std::round(NSHeight(windowFrame))
         };
+    }
+    std::array<int, 2> BrowserWindow::GetContentSize() {
+        NSSize size = impl_->nsWindow.contentView.frame.size;
+        return { static_cast<int>(std::round(size.width)), static_cast<int>(std::round(size.height)) };
+    }
+    void BrowserWindow::SetTransparent(bool transparent) {
+        [impl_->nsWindow setOpaque:!transparent];
+        [impl_->nsWindow setBackgroundColor:transparent ? NSColor.clearColor : NSColor.windowBackgroundColor];
+    }
+    bool BrowserWindow::SetHasShadow(bool hasShadow) {
+        [impl_->nsWindow setHasShadow:hasShadow];
+        return true;
     }
     std::array<int, 2> BrowserWindow::GetPosition() {
         NSWindow* window = impl_->nsWindow;

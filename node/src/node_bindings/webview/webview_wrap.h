@@ -15,11 +15,13 @@ namespace DeskGap {
         void LoadRequest(const Napi::CallbackInfo& info);
         void ExecuteJavaScript(const Napi::CallbackInfo& info);
         void Reload(const Napi::CallbackInfo&);
+        void ResolveNavigationPolicy(const Napi::CallbackInfo& info);
+        void ResolveCustomProtocolRequest(const Napi::CallbackInfo& info);
         void SetDevToolsEnabled(const Napi::CallbackInfo& info);
         void Destroy(const Napi::CallbackInfo& info);
         #ifdef WIN32
         enum class Engine: uint32_t {
-            TRIDENT = 0, WINRT = 1, WEBVIEW2 = 2
+            WINRT = 1, WEBVIEW2 = 2
         };
         static Napi::Value IsWinRTEngineAvailable(const Napi::CallbackInfo& info);
         static Napi::Value GetWebview2Version(const Napi::CallbackInfo& info);

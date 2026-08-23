@@ -9,7 +9,20 @@ namespace DeskGap {
         WKWebView* wkWebView;
         NSObject* webViewDelegate;
         NSObject* localURLSchemeHandler;
+        NSMutableArray* customURLSchemeHandlers;
+        NSMutableDictionary* pendingProtocolRequests;
+        EventCallbacks callbacks;
+        uint64_t nextProtocolRequestId = 1;
         void ServePath(NSString* path);
+        void StartCustomProtocolRequest(id<WKURLSchemeTask> task);
+        void StopCustomProtocolRequest(id<WKURLSchemeTask> task);
+        void ResolveCustomProtocolRequest(
+            uint64_t requestId,
+            int statusCode,
+            const std::string& statusText,
+            const std::vector<HTTPHeader>& headers,
+            std::vector<uint8_t>&& body
+        );
         ~Impl();
     };
 }

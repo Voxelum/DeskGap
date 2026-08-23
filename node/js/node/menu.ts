@@ -1,15 +1,15 @@
 import { bulkUISync } from './internal/dispatch';
 import { parseAcceleratorToTokens } from './accelerator';
 import globals from './internal/globals';
-import { BrowserWindow } from './browser-window'
+import type { BrowserWindow } from './browser-window'
 import roleDefaults, { Role } from './internal/menu/roles';
 import { MenuItemNative, MenuNative } from './internal/native';
 
-export type MenuItemType = 'normal' | 'separator' | 'submenu' | 'checkbox';
+export type MenuItemType = 'normal' | 'separator' | 'submenu' | 'checkbox' | 'radio';
 
 /** @internal */
 const MenuItemTypeCode = {
-    normal: 0, separator: 1, submenu: 2, checkbox: 3
+    normal: 0, separator: 1, submenu: 2, checkbox: 3, radio: 4
 };
 
 /** @internal */
@@ -20,6 +20,7 @@ export const MenuTypeCode = {
 };
 
 export interface MenuItemConstructorOptions {
+    id: string;
     role: Role;
     submenu: Array<Partial<MenuItemConstructorOptions> | null> | Menu;
     type: MenuItemType;
@@ -31,7 +32,7 @@ export interface MenuItemConstructorOptions {
 }
 
 export interface IMenuPopupOptions {
-    window?: BrowserWindow; x?: number; y?: number; positioningItem?: number;
+    window?: BrowserWindow; x?: number; y?: number; positioningItem?: number; callback?: () => void;
 }
 
 let lastNativeId: number = 0;
@@ -40,43 +41,64 @@ export const MenuNativeKey = Symbol('MenuNative')
 
 export class Menu {
     /** @internal */ private natives_ = new Map<number, MenuNative>();
+    /** @internal */ private parentItem_: MenuItem | null = null;
     public items: MenuItem[] = [];
 
     /** @internal */ private nativeCallbacks_ = {};
 
-    append(menuItem: MenuItem) {
+    append(menuItem: MenuItem): void {
+        if (!(menuItem instanceof MenuItem)) {
+            throw new TypeError('Menu#append requires a MenuItem');
+        }
+        if (menuItem.menu != null) {
+            throw new Error('MenuItem is already attached to a menu');
+        }
+        if (menuItem.submenu != null && menuItem.submenu.containsMenu_(this)) {
+            throw new Error('Cannot create a cyclic menu hierarchy');
+        }
+
+        menuItem.menu = this;
         this.items.push(menuItem);
+        if (menuItem.type === 'radio') {
+            this.updateRadioGroup_(menuItem, menuItem['checkedExplicit_'] && menuItem.checked);
+        }
     }
 
-    popup(optionsOrWindow?: BrowserWindow | IMenuPopupOptions) {
-        const options: IMenuPopupOptions | undefined = (optionsOrWindow instanceof BrowserWindow) ? { window: optionsOrWindow } : optionsOrWindow;
+    popup(optionsOrWindow?: BrowserWindow | IMenuPopupOptions): void {
+        const options: IMenuPopupOptions | undefined = optionsOrWindow != null && 'native_' in optionsOrWindow
+            ? { window: optionsOrWindow as BrowserWindow }
+            : optionsOrWindow as IMenuPopupOptions | undefined;
 
         const fullOptions: IMenuPopupOptions = Object.assign({
             window: globals.focusedBrowserWindow,
             positioningItem: -1
         }, options);
 
+        if ((fullOptions.x == null) !== (fullOptions.y == null)) {
+            throw new TypeError('Menu#popup requires both x and y coordinates');
+        }
+        if (fullOptions.window == null) {
+            throw new Error('No window specified for Menu#popup, and there is no focused window');
+        }
+        const window = fullOptions.window;
+
         let location: [number, number] | null = null;
         if ((typeof fullOptions.x === 'number') && (typeof fullOptions.y === 'number')) {
             location = [fullOptions.x, fullOptions.y];
         }
 
-        if (fullOptions.window == null) {
-            return;
-        }
-
         let nativeId: number = 0;
         bulkUISync(() => {
-            if (fullOptions.window == null) {
-                throw new Error('No window specified for Menu#popup, and there is no focused window');
-            }
-            const result = this.createNative_(MenuTypeCode.context, fullOptions.window);
+            const result = this.createNative_(MenuTypeCode.context, window);
             nativeId = result[0];
             const native = result[1];
-            fullOptions.window['native_'].popupMenu(native, location, fullOptions.positioningItem, () => {
+            window['native_'].popupMenu(native, location, fullOptions.positioningItem!, () => {
                 bulkUISync(() => {
                     this.destroyNative_(nativeId);
                 });
+                if (fullOptions.callback != null) {
+                    fullOptions.callback();
+                }
             });
         });
     }
@@ -87,6 +109,9 @@ export class Menu {
         throw new Error('This method should have been overridden in the "app" module');
     }
     static buildFromTemplate(template: Array<Partial<MenuItemConstructorOptions> | null>) {
+        if (!Array.isArray(template)) {
+            throw new TypeError('Menu.buildFromTemplate requires an array');
+        }
         const newMenu = new Menu();
         for (const itemConstructorOptions of template) {
             if (itemConstructorOptions != null) {
@@ -94,6 +119,58 @@ export class Menu {
             }
         }
         return newMenu;
+    }
+
+    getMenuItemById(id: string): MenuItem | null {
+        for (const item of this.items) {
+            if (item.id === id) {
+                return item;
+            }
+            const submenuItem = item.submenu != null ? item.submenu.getMenuItemById(id) : null;
+            if (submenuItem != null) {
+                return submenuItem;
+            }
+        }
+        return null;
+    }
+
+    /** @internal */
+    private containsMenu_(menu: Menu): boolean {
+        if (this === menu) {
+            return true;
+        }
+        return this.items.some(item => item.submenu != null && item.submenu.containsMenu_(menu));
+    }
+
+    /** @internal */
+    public attachAsSubmenu_(item: MenuItem): void {
+        if (this.parentItem_ != null) {
+            throw new Error('Menu is already attached as a submenu');
+        }
+        if (this.natives_.size !== 0) {
+            throw new Error('A displayed menu cannot be attached as a submenu');
+        }
+        this.parentItem_ = item;
+    }
+
+    /** @internal */
+    private updateRadioGroup_(item: MenuItem, forceChecked: boolean): void {
+        const itemIndex = this.items.indexOf(item);
+        let groupStart = itemIndex;
+        let groupEnd = itemIndex;
+        while (groupStart > 0 && this.items[groupStart - 1].type !== 'separator') {
+            --groupStart;
+        }
+        while (groupEnd + 1 < this.items.length && this.items[groupEnd + 1].type !== 'separator') {
+            ++groupEnd;
+        }
+
+        const group = this.items.slice(groupStart, groupEnd + 1).filter(groupItem => groupItem.type === 'radio');
+        if (forceChecked || !group.some(groupItem => groupItem.checked)) {
+            for (const groupItem of group) {
+                groupItem['setChecked_'](groupItem === item);
+            }
+        }
     }
 
     /** @internal */
@@ -124,6 +201,10 @@ export class Menu {
 };
 
 export class MenuItem {
+    public readonly id: string;
+    public readonly type: MenuItemType;
+    public readonly role: Role | '';
+    public menu: Menu | null = null;
     /** @internal */ private label_: string;
     /** @internal */ private enabled_: boolean;
     /** @internal */ private type_: number;
@@ -132,7 +213,9 @@ export class MenuItem {
     /** @internal */ private natives_ = new Map<number, MenuItemNative>();
     /** @internal */ private checked_: boolean;
     /** @internal */ private accelerator_: string;
+    /** @internal */ private acceleratorTokens_: string[];
     /** @internal */ private role_: string;
+    /** @internal */ private checkedExplicit_: boolean;
 
     constructor(options: Partial<MenuItemConstructorOptions> = {}) {
         if (options.role != null) {
@@ -142,6 +225,7 @@ export class MenuItem {
         }
 
         const fullOptions: MenuItemConstructorOptions = Object.assign({
+            id: '',
             label: '',
             type: (options.submenu != null) ? 'submenu' : 'normal',
             checked: false,
@@ -160,18 +244,42 @@ export class MenuItem {
             fullOptions.submenu = new Menu();
         }
 
+        if (!(fullOptions.type in MenuItemTypeCode)) {
+            throw new TypeError(`Invalid menu item type: ${fullOptions.type}`);
+        }
+        if (fullOptions.submenu != null && fullOptions.type !== 'submenu') {
+            throw new TypeError('Menu items with a submenu must have type "submenu"');
+        }
+
+        this.id = fullOptions.id;
+        this.type = fullOptions.type;
+        this.role = fullOptions.role;
         this.label_ = fullOptions.label;
         this.enabled_ = fullOptions.enabled;
         this.submenu_ = fullOptions.submenu as (Menu | null);
         this.type_ = MenuItemTypeCode[fullOptions.type];
-        this.click = fullOptions.click;
+        this.click = fullOptions.click as (item: MenuItem, window: BrowserWindow | null) => void;
         this.checked_ = fullOptions.checked;
         this.accelerator_ = fullOptions.accelerator;
+        this.acceleratorTokens_ = parseAcceleratorToTokens(fullOptions.accelerator);
         this.role_ = fullOptions.role;
+        this.checkedExplicit_ = options.checked != null;
+
+        if (this.submenu_ != null) {
+            this.submenu_.attachAsSubmenu_(this);
+        }
     }
 
     get label(): string {
         return this.label_;
+    }
+    set label(value: string) {
+        bulkUISync(() => {
+            for (const native of this.natives_.values()) {
+                native.setLabel(value);
+            }
+        });
+        this.label_ = value;
     }
     get submenu(): Menu | null {
         return this.submenu_;
@@ -191,15 +299,24 @@ export class MenuItem {
         return this.checked_;
     }
     set checked(value: boolean) {
+        if (this.type === 'radio' && value && this.menu != null) {
+            this.menu['updateRadioGroup_'](this, true);
+            return;
+        }
+        this.setChecked_(value);
+    }
+    get accelerator(): string {
+        return this.accelerator_;
+    }
+
+    /** @internal */
+    private setChecked_(value: boolean): void {
         bulkUISync(() => {
             for (const native of this.natives_.values()) {
                 native.setChecked(value);
             }
         });
-        this.checked_ = value
-    }
-    get accelerator(): string {
-        return this.accelerator_;
+        this.checked_ = value;
     }
 
     /** @internal */
@@ -214,6 +331,9 @@ export class MenuItem {
             if (this.type_ === MenuItemTypeCode.checkbox) {
                 this.checked = !this.checked;
             }
+            else if (this.type_ === MenuItemTypeCode.radio) {
+                this.checked = true;
+            }
             if (this.click != null) {
                 this.click(this, window || globals.focusedBrowserWindow);
             }
@@ -223,8 +343,7 @@ export class MenuItem {
         native.setLabel(this.label_);
         native.setChecked(this.checked_);
 
-        const acceleratorTokens = parseAcceleratorToTokens(this.accelerator_);
-        native.setAccelerator(acceleratorTokens);
+        native.setAccelerator(this.acceleratorTokens_);
 
         this.natives_.set(nativeId, native);
 

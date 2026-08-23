@@ -8,15 +8,23 @@ __The node thread__ and __the UI thread__ are analogous to __the main process__ 
 
 ## Communication Between the Node Thread And UI Threads.
 
-DeskGap provides two ways for UI threads to communicate with the node thread:
+DeskGap exposes three scoped communication levels between UI threads and the
+Node thread:
 
- * `messageUI` and `messageNode` (analogous to Electron’s [`ipcRenderer`](https://electronjs.org/docs/api/ipc-renderer) and [`ipcMain`](https://electronjs.org/docs/api/ipc-main)) for sending messages.
- * `asyncNode` (to be documented; analogous to Electron’s [`remote`](https://electronjs.org/docs/api/remote) but in an asynchronous style) for requiring CommonJS modules, invoking methods and accessing properties.
+* Small JSON commands use `WebView.handle()` in Node and
+	`window.deskgap.invoke()` in the browser.
+* Fetch-shaped request and response work uses `WebView.handleService()` and
+	`window.deskgap.fetch()`.
+* Long-lived or binary duplex traffic uses `TransportChannel`.
 
+Each WebView receives an authenticated, navigation-scoped transport identity.
+The server derives the sender WebView and navigation generation from that
+identity rather than trusting renderer-provided fields. See
+[Electron Compatibility](electron-compatibility.md) for transport details.
 
 
 ## Synchronous And Asynchronous Dispatching
 
 Most UI-related APIs (like constructing a window, or load a html file) in the node thread dispatches an action __synchronously__  to the __UI thread__. In others words, these APIs are __blocking__ and will wait until the UI thread finishes. The delay may not be noticeable to users but Node.js in DeskGap is not a suitable place for running a web server in the production.
 
-Due to the lack of related functionalities provided by the system’s webview, UI threads do not have any API that __synchronously__ dispatches actions to the node thread. All messages and invocations from UI threads are __asynchronous__ dispatched to the node thread. So things like [`remote`](https://electronjs.org/docs/api/remote) in Electron can never happen.
+Due to the lack of related functionalities provided by the system’s webview, UI threads do not have any API that __synchronously__ dispatches actions to the node thread. All messages and invocations from UI threads are dispatched __asynchronously__. APIs such as Electron's deprecated `remote` module are intentionally unsupported.

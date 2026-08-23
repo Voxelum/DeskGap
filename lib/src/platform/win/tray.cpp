@@ -91,22 +91,76 @@ namespace DeskGap {
         BOOL result = Shell_NotifyIcon(NIM_MODIFY, &icon_data);
     }
 
-    void Tray::Impl::SetIcon(const std::string &iconPath) {
-        HICON icon;
-        std::wstring iconPath_ = UTF8ToWString(iconPath.c_str());
-        ExtractIconEx(iconPath_.c_str(), 0, NULL, &icon, 1);
+    void Tray::Impl::SetImage(const NativeImage& image) {
+        const NativeImage::Representation* representation = image.GetRepresentation();
+        if (representation == nullptr) return;
+
+        BITMAPV5HEADER bitmapHeader{};
+        bitmapHeader.bV5Size = sizeof(bitmapHeader);
+        bitmapHeader.bV5Width = representation->pixelWidth;
+        bitmapHeader.bV5Height = -representation->pixelHeight;
+        bitmapHeader.bV5Planes = 1;
+        bitmapHeader.bV5BitCount = 32;
+        bitmapHeader.bV5Compression = BI_BITFIELDS;
+        bitmapHeader.bV5RedMask = 0x00ff0000;
+        bitmapHeader.bV5GreenMask = 0x0000ff00;
+        bitmapHeader.bV5BlueMask = 0x000000ff;
+        bitmapHeader.bV5AlphaMask = 0xff000000;
+
+        void* bitmapPixels = nullptr;
+        HDC screen = GetDC(nullptr);
+        HBITMAP colorBitmap = CreateDIBSection(
+            screen,
+            reinterpret_cast<BITMAPINFO*>(&bitmapHeader),
+            DIB_RGB_COLORS,
+            &bitmapPixels,
+            nullptr,
+            0
+        );
+        ReleaseDC(nullptr, screen);
+        if (colorBitmap == nullptr || bitmapPixels == nullptr) return;
+
+        uint8_t* destination = static_cast<uint8_t*>(bitmapPixels);
+        for (size_t index = 0; index < representation->pixels.size(); index += 4) {
+            destination[index] = representation->pixels[index + 2];
+            destination[index + 1] = representation->pixels[index + 1];
+            destination[index + 2] = representation->pixels[index];
+            destination[index + 3] = representation->pixels[index + 3];
+        }
+
+        HBITMAP maskBitmap = CreateBitmap(
+            representation->pixelWidth,
+            representation->pixelHeight,
+            1,
+            1,
+            nullptr
+        );
+        ICONINFO iconInfo{};
+        iconInfo.fIcon = TRUE;
+        iconInfo.hbmColor = colorBitmap;
+        iconInfo.hbmMask = maskBitmap;
+        HICON icon = CreateIconIndirect(&iconInfo);
+        DeleteObject(colorBitmap);
+        DeleteObject(maskBitmap);
+        if (icon == nullptr) return;
 
         NOTIFYICONDATA icon_data;
         InitIconData(&icon_data);
         icon_data.uFlags = NIF_ICON;
         icon_data.hIcon = icon;
-        BOOL result = Shell_NotifyIcon(NIM_MODIFY, &icon_data);
+        Shell_NotifyIcon(NIM_MODIFY, &icon_data);
+        if (icon_ != nullptr) DestroyIcon(icon_);
+        icon_ = icon;
     }
 
     void Tray::Impl::Remove() {
         NOTIFYICONDATA icon_data;
         InitIconData(&icon_data);
         Shell_NotifyIcon(NIM_DELETE, &icon_data);
+        if (icon_ != nullptr) {
+            DestroyIcon(icon_);
+            icon_ = nullptr;
+        }
 
         // Untrack the tray impl
         tray_instances_.erase(
@@ -123,9 +177,9 @@ namespace DeskGap {
     }
     bool Tray::isDestroyed() { return impl_ == nullptr; }
 
-    void Tray::SetIcon(const std::string &iconPath) {
+    void Tray::SetImage(const NativeImage& image) {
         if (impl_) {
-            impl_->SetIcon(iconPath);
+            impl_->SetImage(image);
         }
     }
 
@@ -168,10 +222,10 @@ namespace DeskGap {
 
     std::string Tray::GetTitle() { return ""; }
 
-    Tray::Tray(const std::string &iconPath,
+    Tray::Tray(const NativeImage& image,
                const EventCallbacks &&eventCallbacks)
         : impl_(new Impl(std::move(eventCallbacks))) {
-        impl_->SetIcon(iconPath);
+        impl_->SetImage(image);
     }
 
     Tray::~Tray() { Destroy(); }

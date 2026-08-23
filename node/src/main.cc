@@ -1,10 +1,11 @@
 #include "../../lib/src/utils/semaphore.hpp"
 #include "deskgap/app.hpp"
 #include "deskgap/argv.hpp"
+#include "cppgc/platform.h"
 #include "napi.h"
 #include "node_bindings/app/app_startup.hpp"
 #include "node_bindings/index.hpp"
-#include "node_embedding_api.h"
+#include <iostream>
 #include <memory>
 #include <thread>
 #include <utility>
@@ -28,32 +29,7 @@ namespace {
 
 
 namespace {
-    char* join_errors(const std::vector<std::string>& errors) {
-        std::string joined_error;
-        for (std::size_t i = 0; i < errors.size(); ++i) {
-            if (i > 0) {
-                joined_error += '\n';
-            }
-            joined_error += errors[i];
-        }
-        char* c_result = (char*)malloc(joined_error.size() + 1);
-        joined_error.copy(c_result, joined_error.size());
-        c_result[joined_error.size()] = '\0';
-        return c_result;
-    }
-
-    std::vector<std::string> create_arg_vec(int argc, const char* const* argv) {
-        std::vector<std::string> vec;
-        if (argc > 0) {
-            vec.reserve(argc);
-            for (int i = 0; i < argc; ++i) {
-                vec.emplace_back(argv[i]);
-            }
-        }
-        return vec;
-    }
-    
-    node_run_result_t RunNodeInstance(
+    int RunNodeInstance(
         node::MultiIsolatePlatform* platform,
         const std::vector<std::string>& args,
         const std::vector<std::string>& exec_args,
@@ -70,15 +46,24 @@ namespace {
             );
 
         if (!setup) {
-            return { 1, join_errors(errors) };
+            for (const std::string& error : errors) {
+                std::cerr << error << std::endl;
+            }
+            return 1;
         }
 
         v8::Isolate* isolate = setup->isolate();
         node::Environment* env = setup->env();
+        uv_loop_t* eventLoop = setup->event_loop();
+        auto keepAlive = new uv_async_t;
+        if (uv_async_init(eventLoop, keepAlive, [](uv_async_t*) {}) != 0) {
+            delete keepAlive;
+            keepAlive = nullptr;
+        }
 
-        node_run_result_t result { 0, nullptr };
+        int exitCode = 0;
         node::SetProcessExitHandler(env, [&](node::Environment* env, int exit_code) {
-            result.exit_code = exit_code;
+            exitCode = exit_code;
             node::Stop(env);
         });
 
@@ -88,15 +73,7 @@ namespace {
             v8::HandleScope handle_scope(isolate);
             v8::Context::Scope context_scope(setup->context());
 
-            node::AddLinkedBinding(env, napi_module {
-                NAPI_MODULE_VERSION,
-                node::ModuleFlags::kLinked,
-                nullptr,
-                napi_reg_func,
-                "__embedder_mod",
-                nullptr,
-                {0},
-            });
+            node::AddLinkedBinding(env, "__embedder_mod", napi_reg_func);
 
             v8::MaybeLocal<v8::Value> loadenv_ret = node::LoadEnvironment(
                 env,
@@ -107,50 +84,73 @@ namespace {
             );
 
             if (loadenv_ret.IsEmpty()) {  // There has been a JS exception.
-                result.exit_code = 1;
+                exitCode = 1;
             }
             else {
                 int evtloop_ret = node::SpinEventLoop(env).FromMaybe(1);
-                if (result.exit_code == 0) {
-                    result.exit_code = evtloop_ret;
+                if (exitCode == 0) {
+                    exitCode = evtloop_ret;
                 }
             }
-            node::Stop(env);
         }
+        if (keepAlive != nullptr) {
+            uv_close(reinterpret_cast<uv_handle_t*>(keepAlive), [](uv_handle_t* handle) {
+                delete reinterpret_cast<uv_async_t*>(handle);
+            });
+            uv_run(eventLoop, UV_RUN_NOWAIT);
+        }
+        node::Stop(env);
 
-        return result;
+        return exitCode;
     }
 
-    node_run_result_t node_run2(node_options_t options) {
-        std::vector<std::string> process_args = create_arg_vec(options.process_argc, options.process_argv);
+    int RunNode(
+        const std::vector<std::string>& process_args,
+        napi_addon_register_func napi_reg_func
+    ) {
         if (process_args.empty()) {
-            return { 1, join_errors({ "process args is empty" })};
-        } 
-        std::vector<std::string> args { process_args[0] };
-
-        std::vector<std::string> exec_args;
-        std::vector<std::string> errors;
-        int exit_code = node::InitializeNodeWithArgs(
-            &args, &exec_args, &errors,
-            static_cast<node::ProcessFlags::Flags>(
-                node::ProcessFlags::kDisableCLIOptions |
-                node::ProcessFlags::kDisableNodeOptionsEnv
-            )
-        );
-
-        if (exit_code != 0) {
-            return { exit_code, join_errors(errors) };
+            std::cerr << "process args is empty" << std::endl;
+            return 1;
         }
-        std::unique_ptr<node::MultiIsolatePlatform> platform = node::MultiIsolatePlatform::Create(4);
+
+        std::shared_ptr<node::InitializationResult> initialization =
+            node::InitializeOncePerProcess(
+                process_args,
+                {
+                    node::ProcessInitializationFlags::kNoInitializeV8,
+                    node::ProcessInitializationFlags::kNoInitializeNodeV8Platform,
+                    node::ProcessInitializationFlags::kDisableCLIOptions,
+                    node::ProcessInitializationFlags::kDisableNodeOptionsEnv,
+                    node::ProcessInitializationFlags::kNoInitializeCppgc,
+                }
+            );
+
+        for (const std::string& error : initialization->errors()) {
+            std::cerr << error << std::endl;
+        }
+        if (initialization->early_return()) {
+            return initialization->exit_code();
+        }
+
+        std::unique_ptr<node::MultiIsolatePlatform> platform =
+            node::MultiIsolatePlatform::Create(4);
         v8::V8::InitializePlatform(platform.get());
+        cppgc::InitializeProcess(platform->GetPageAllocator());
         v8::V8::Initialize();
 
-        node_run_result_t result = RunNodeInstance(platform.get(), process_args, exec_args, options.napi_reg_func);
+        int exitCode = RunNodeInstance(
+            platform.get(),
+            initialization->args(),
+            initialization->exec_args(),
+            napi_reg_func
+        );
 
+        cppgc::ShutdownProcess();
         v8::V8::Dispose();
-        v8::V8::ShutdownPlatform();
+        v8::V8::DisposePlatform();
+        node::TearDownOncePerProcess();
 
-        return result;
+        return exitCode;
     }
 }
 
@@ -163,37 +163,14 @@ namespace DeskGap {
     }
 
     int startNodeWithArgs(const std::vector<const char *> &args) {
-        // node_start requires the strings in argv to be allocated in a
-        // continuous memory
-        std::size_t argv_mem_size = 0;
-        std::vector<std::size_t> arg_lens(args.size());
-        for (std::size_t i = 0; i < args.size(); i++) {
-            arg_lens[i] = strlen(args[i]);
-            argv_mem_size += arg_lens[i] + 1;
-        }
-
-        static std::vector<char> argv_mem(argv_mem_size);
-        static std::vector<char *> argv(args.size());
-
-        char *argv_cur = argv_mem.data();
-        for (std::size_t i = 0; i < args.size(); i++) {
-            const char *c_arg = args[i];
-            size_t c_arg_len = strlen(c_arg);
-            std::copy(c_arg, c_arg + c_arg_len + 1, argv_cur);
-            argv[i] = argv_cur;
-            argv_cur += c_arg_len + 1;
-        }
-
-        node_options_t options = {
-            (int)args.size(), argv.data(),
+        std::vector<std::string> processArgs(args.begin(), args.end());
+        return RunNode(
+            processArgs,
             [](napi_env env, napi_value exports) -> napi_value {
                 return Napi::RegisterModule(env, exports,
                                             DeskGap::InitNodeNativeModule);
-            }};
-
-        auto result = node_run2(options);
-
-        return result.exit_code;
+            }
+        );
     }
 } // namespace DeskGap
 

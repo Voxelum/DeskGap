@@ -24,6 +24,20 @@ export type VibrancyBlendingMode = 'behind-window' | 'within-window';
 export type VibrancyState = 'follows-window' | 'active' | 'inactive';
 
 export type TitleBarStyle = 'default' | 'hidden' | 'hiddenInset';
+export type BackgroundMaterial = 'auto' | 'none' | 'mica' | 'acrylic' | 'tabbed';
+
+export interface Point {
+    x: number;
+    y: number;
+}
+
+const BackgroundMaterialCode: Record<BackgroundMaterial, number> = {
+    auto: 0,
+    none: 1,
+    mica: 2,
+    acrylic: 3,
+    tabbed: 4,
+};
 
 export interface Vibrancy {
     material?: VibrancyMaterial;
@@ -48,11 +62,19 @@ export interface IBrowserWindowConstructorOptions {
     resizable: boolean,
     frame: boolean,
     closable: boolean,
+    transparent: boolean,
+    useContentSize: boolean,
+    hasShadow: boolean,
     vibrancies: Vibrancy[],
     vibrancy: VibrancyMaterial,
     maxHeight: number, maxWidth: number,
     minHeight: number, minWidth: number,
     menu: Menu | null,
+    autoHideMenuBar: boolean,
+    parent: BrowserWindow | null,
+    modal: boolean,
+    backgroundMaterial: BackgroundMaterial | null,
+    trafficLightPosition: Point | null,
     webPreferences: Partial<WebPreferences>
 };
 
@@ -64,20 +86,32 @@ export interface BrowserWindowEvents extends IEventMap {
     'move': [],
     'page-title-updated': [string],
     'ready-to-show': [],
+    'maximize': [],
+    'unmaximize': [],
+    'minimize': [],
+    'restore': [],
+    'enter-full-screen': [],
+    'leave-full-screen': [],
     'closed': []
 }
 
 export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
     /** @internal */ private id_: number;
     /** @internal */ private hasBeenShown_ = false;
+    /** @internal */ private isDestroyed_ = false;
     /** @internal */ private webview_: WebView;
     /** @internal */ private native_: BrowserWindowNative;
     /** @internal */ private title_: string;
     /** @internal */ private titleBarStyle_: TitleBarStyle;
     /** @internal */ private minimumSize_: [number, number];
     /** @internal */ private maximumSize_: [number, number];
+    /** @internal */ private maximizable_: boolean;
+    /** @internal */ private minimizable_: boolean;
+    /** @internal */ private hasFrame_: boolean;
     /** @internal */ private menu_: Menu | null = null;
     /** @internal */ private menuNativeId_: number | null = null;
+    /** @internal */ private autoHideMenuBar_ = false;
+    /** @internal */ private menuBarVisible_ = true;
 
     constructor(options: Partial<IBrowserWindowConstructorOptions> = {}) {
         super();
@@ -100,6 +134,9 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
             resizable: true,
             frame: true,
             closable: true,
+            transparent: false,
+            useContentSize: false,
+            hasShadow: true,
             vibrancies: null,
             vibrancy: null,
             maxHeight: 0,
@@ -107,8 +144,17 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
             minHeight: 0,
             minWidth: 0,
             menu: defaultMenu,
+            autoHideMenuBar: false,
+            parent: null,
+            modal: false,
+            backgroundMaterial: null,
+            trafficLightPosition: null,
             webPreferences: {}
         }, options);
+        if (process.platform === 'darwin' && fullOptions.autoHideMenuBar) {
+            throw new Error('autoHideMenuBar is supported only on Windows and Linux');
+        }
+        this.hasFrame_ = fullOptions.frame;
 
         bulkUISync(() => {
             this.webview_ = new WebView({
@@ -150,28 +196,44 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
                 onClose: () => {
                     if (this.isDestroyed()) return;
                     this.trigger_('close', { defaultAction: () => this.destroy() })
-                }
+                },
+                onMaximize: () => this.trigger_('maximize'),
+                onUnmaximize: () => this.trigger_('unmaximize'),
+                onMinimize: () => this.trigger_('minimize'),
+                onRestore: () => this.trigger_('restore'),
+                onEnterFullScreen: () => this.trigger_('enter-full-screen'),
+                onLeaveFullScreen: () => this.trigger_('leave-full-screen')
             });
 
-            this.native_.setMaximizable(fullOptions.maximizable);
-            this.native_.setMinimizable(fullOptions.minimizable);
+            this.setMaximizable(fullOptions.maximizable);
+            this.setMinimizable(fullOptions.minimizable);
             this.native_.setResizable(fullOptions.resizable);
             this.native_.setHasFrame(fullOptions.frame);
             this.native_.setClosable(fullOptions.closable);
+            this.native_.setTransparent(fullOptions.transparent);
+            if (fullOptions.parent != null && fullOptions.parent.isDestroyed()) {
+                throw new Error('Cannot assign a destroyed parent window');
+            }
+            this.native_.setParent(fullOptions.parent == null ? null : fullOptions.parent.native_);
+            this.native_.setModal(fullOptions.modal);
 
             if (process.platform !== 'darwin') {
                 this.setMenu(fullOptions.menu);
+                this.setAutoHideMenuBar(fullOptions.autoHideMenuBar);
                 this.setIcon(fullOptions.icon);
             }
-
             if (process.platform === 'darwin' && fullOptions.frame) {
                 this.setTitleBarStyle(fullOptions.titleBarStyle);
+            }
+            if (fullOptions.trafficLightPosition != null) {
+                this.setTrafficLightPosition(fullOptions.trafficLightPosition);
             }
 
             this.setTitle(fullOptions.title);
             this.setMaximumSize(fullOptions.maxWidth, fullOptions.maxHeight);
             this.setMinimumSize(fullOptions.minWidth, fullOptions.minHeight);
-            this.setSize(fullOptions.width, fullOptions.height, false);
+            if (fullOptions.useContentSize) this.setContentSize(fullOptions.width, fullOptions.height, false);
+            else this.setSize(fullOptions.width, fullOptions.height, false);
             if (fullOptions.center) {
                 this.native_.center();
             }
@@ -188,15 +250,31 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
                 }
             }
 
-            if (fullOptions.show) {
-                this.show();
-            }
         });
+
+        try {
+            if (!fullOptions.hasShadow) this.setHasShadow(false);
+            if (fullOptions.backgroundMaterial != null) {
+                this.setBackgroundMaterial(fullOptions.backgroundMaterial);
+            }
+        }
+        catch (error) {
+            bulkUISync(() => {
+                this.native_.destroy();
+                this.webview_['destroyNative_']();
+            });
+            this.isDestroyed_ = true;
+            throw error;
+        }
+        if (fullOptions.show) {
+            this.show();
+        }
 
         this.id_ = this.webview_.id;
 
         globals.browserWindowsById.set(this.id_, this);
         globals.webViewsById.set(this.webview_.id, this.webview_);
+        app['notifyBrowserWindowCreated_'](this);
 
     }
     get id() {
@@ -207,6 +285,24 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
         this.titleBarStyle_ = style;
 
         this.native_.setTitleBarStyle(TitleBarStyleCode[style.toLowerCase()] || TitleBarStyleCode.default);
+    }
+    setTrafficLightPosition(position: Point): void {
+        if (process.platform !== 'darwin') {
+            throw new Error('trafficLightPosition is supported only on macOS');
+        }
+        this.native_.setTrafficLightPosition(position.x, position.y);
+    }
+    setBackgroundMaterial(material: BackgroundMaterial): void {
+        if (!(material in BackgroundMaterialCode)) {
+            throw new TypeError(`Unsupported background material: ${material}`);
+        }
+        if (process.platform !== 'win32') {
+            throw new Error('backgroundMaterial is supported only on Windows');
+        }
+        if (!this.hasFrame_ && material !== 'none' && material !== 'acrylic') {
+            throw new Error('Frameless Windows windows support only none and acrylic background materials');
+        }
+        this.native_.setBackgroundMaterial(BackgroundMaterialCode[material]);
     }
     show() {
         if (!this.hasBeenShown_) {
@@ -220,11 +316,23 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
     setSize(width: number, height: number, animate: boolean = false) {
         this.native_.setSize(width, height, animate);
     }
+    setContentSize(width: number, height: number, animate: boolean = false) {
+        this.native_.setContentSize(width, height, animate);
+    }
     setMaximumSize(width: number, height: number) {
         this.native_.setMaximumSize(width, height);
     }
     setMinimumSize(width: number, height: number) {
         this.native_.setMinimumSize(width, height);
+    }
+    setAspectRatio(ratio: number, extraSize: { width: number, height: number } = { width: 0, height: 0 }) {
+        if (!Number.isFinite(ratio) || ratio < 0) {
+            throw new TypeError('Aspect ratio must be a finite non-negative number');
+        }
+        this.native_.setAspectRatio(ratio, extraSize.width, extraSize.height);
+    }
+    getNativeWindowHandle(): Buffer {
+        return this.native_.getNativeWindowHandle();
     }
 
     setVibrancy(material: VibrancyMaterial | null) {
@@ -305,6 +413,27 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
     getMenu(): Menu | null {
         return this.menu_;
     }
+    setAutoHideMenuBar(autoHide: boolean): void {
+        if (process.platform === 'darwin') {
+            throw new Error('autoHideMenuBar is supported only on Windows and Linux');
+        }
+        this.autoHideMenuBar_ = Boolean(autoHide);
+        this.menuBarVisible_ = !this.autoHideMenuBar_;
+        this.native_.setAutoHideMenuBar(this.autoHideMenuBar_);
+    }
+    isMenuBarAutoHide(): boolean {
+        return process.platform === 'darwin' ? false : this.native_.isMenuBarAutoHide();
+    }
+    setMenuBarVisibility(visible: boolean): void {
+        if (process.platform === 'darwin') {
+            throw new Error('Menu bar visibility is supported only on Windows and Linux');
+        }
+        this.menuBarVisible_ = Boolean(visible);
+        this.native_.setMenuBarVisibility(this.menuBarVisible_);
+    }
+    isMenuBarVisible(): boolean {
+        return process.platform === 'darwin' ? false : this.native_.isMenuBarVisible();
+    }
     setIcon(path: string | null) {
         this.native_.setIcon(path);
     }
@@ -314,6 +443,15 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
     getSize(): [number, number] {
         return this.native_.getSize();
     }
+    getContentSize(): [number, number] {
+        return this.native_.getContentSize();
+    }
+    setTransparent(transparent: boolean): void {
+        this.native_.setTransparent(transparent);
+    }
+    setHasShadow(hasShadow: boolean): void {
+        this.native_.setHasShadow(hasShadow);
+    }
 
     destroy(): void {
         bulkUISync(() => {
@@ -321,11 +459,10 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
                 this.menu_!['destroyNative_'](this.menuNativeId_);
                 this.menu_ = null;
             }
-            this.webview_['native_'].destroy();
             this.native_.destroy();
+            this.webview_['destroyNative_']();
         });
-        this.webview_['native_'] = null;
-        this.native_ = null;
+        this.isDestroyed_ = true;
 
         if (globals.focusedBrowserWindow === this) {
             globals.focusedBrowserWindow = null;
@@ -346,11 +483,93 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
     }
 
     isDestroyed(): boolean {
-        return this.native_ == null;
+        return this.isDestroyed_;
     }
 
     minimize(): void {
         this.native_.minimize();
+    }
+
+    restore(): void {
+        this.native_.restore();
+    }
+
+    maximize(): void {
+        this.native_.maximize();
+    }
+
+    unmaximize(): void {
+        this.native_.unmaximize();
+    }
+
+    hide(): void {
+        this.native_.hide();
+    }
+
+    focus(): void {
+        this.native_.focus();
+    }
+
+    isVisible(): boolean {
+        return this.native_.isVisible();
+    }
+
+    isFocused(): boolean {
+        return this.native_.isFocused();
+    }
+
+    isMinimized(): boolean {
+        return this.native_.isMinimized();
+    }
+
+    isMaximized(): boolean {
+        return this.native_.isMaximized();
+    }
+
+    setFullScreen(fullScreen: boolean): void {
+        this.native_.setFullScreen(fullScreen);
+    }
+
+    isFullScreen(): boolean {
+        return this.native_.isFullScreen();
+    }
+
+    get fullScreen(): boolean {
+        return this.isFullScreen();
+    }
+
+    set fullScreen(fullScreen: boolean) {
+        this.setFullScreen(fullScreen);
+    }
+
+    flashFrame(flash: boolean): void {
+        this.native_.flashFrame(flash);
+    }
+
+    setMaximizable(maximizable: boolean): void {
+        this.maximizable_ = maximizable;
+        this.native_.setMaximizable(maximizable);
+    }
+
+    get maximizable(): boolean {
+        return this.maximizable_;
+    }
+
+    set maximizable(maximizable: boolean) {
+        this.setMaximizable(maximizable);
+    }
+
+    setMinimizable(minimizable: boolean): void {
+        this.minimizable_ = minimizable;
+        this.native_.setMinimizable(minimizable);
+    }
+
+    get minimizable(): boolean {
+        return this.minimizable_;
+    }
+
+    set minimizable(minimizable: boolean) {
+        this.setMinimizable(minimizable);
     }
 
     close(): void {

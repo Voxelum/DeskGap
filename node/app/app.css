@@ -2,11 +2,141 @@ body {
     -ms-user-select: none;
     -webkit-user-select: none;
     cursor: default;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    font-family: Bahnschrift, 'Segoe UI', sans-serif;
     margin: 0;
     padding: 0;
     position: relative;
+    background: #f4f6f3;
+    color: #19201c;
 }
+
+header {
+    align-items: end;
+    background: #173f35;
+    color: #f8faf5;
+    display: flex;
+    justify-content: space-between;
+    min-height: 130px;
+    padding: 28px 40px 24px;
+}
+
+header h1 {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 34px;
+    font-weight: normal;
+    letter-spacing: 0;
+    margin: 5px 0 6px;
+}
+
+header p {
+    color: #c8d7cf;
+    margin: 0;
+}
+
+.eyebrow, .summary-label {
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+}
+
+button {
+    background: #f4f6f3;
+    border: 1px solid #9ca9a2;
+    border-radius: 4px;
+    color: #173f35;
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+    min-height: 34px;
+    padding: 7px 13px;
+}
+
+button:hover { background: #e4ebe6; }
+button:disabled { cursor: wait; opacity: 0.55; }
+
+header button {
+    background: #f0c85a;
+    border-color: #f0c85a;
+    color: #19201c;
+    font-weight: bold;
+}
+
+.parity-main {
+    margin: 0 auto;
+    max-width: 1080px;
+    padding: 26px 32px 44px;
+}
+
+.summary {
+    background: #ffffff;
+    border: 1px solid #d5ddd8;
+    display: grid;
+    grid-template-columns: 2fr repeat(3, 1fr);
+    margin-bottom: 30px;
+}
+
+.summary > div {
+    border-right: 1px solid #d5ddd8;
+    padding: 16px 20px;
+}
+
+.summary > div:last-child { border-right: 0; }
+.summary-label { color: #69766f; display: block; margin-bottom: 6px; }
+.summary strong { font-size: 20px; }
+.summary .passed { color: #16784d; }
+.summary .failed { color: #b6382f; }
+.summary .running { color: #886600; }
+
+.section-heading {
+    align-items: baseline;
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.section-heading h2 {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 21px;
+    font-weight: normal;
+    letter-spacing: 0;
+    margin: 0;
+}
+
+.section-heading span { color: #69766f; font-size: 12px; }
+
+.test-results {
+    border: 1px solid #d5ddd8;
+    margin-bottom: 30px;
+}
+
+.test-row {
+    align-items: start;
+    background: #fff;
+    border-bottom: 1px solid #e1e6e3;
+    display: grid;
+    gap: 13px;
+    grid-template-columns: 10px 1fr auto;
+    padding: 15px 18px;
+}
+
+.test-row:last-child { border-bottom: 0; }
+.test-row h3 { font-size: 14px; margin: 0 0 5px; }
+.test-row pre { margin: 0; padding: 9px 12px; }
+.indicator { border-radius: 50%; height: 9px; margin-top: 4px; width: 9px; }
+.test-row.passed .indicator { background: #22a369; }
+.test-row.failed .indicator { background: #d34b42; }
+.duration { color: #7a867f; font-family: Consolas, monospace; font-size: 11px; }
+
+.native-actions {
+    border-top: 1px solid #c8d1cc;
+    padding-top: 22px;
+}
+
+.action-bar { display: flex; flex-wrap: wrap; gap: 8px; }
+.action-result { color: #52625a; font-family: Consolas, monospace; font-size: 12px; min-height: 16px; }
+.empty-state { background: #fff; margin: 0; padding: 24px; }
+.fatal-error { color: #b6382f; }
 
 section {
     margin-bottom: 36px;
@@ -29,8 +159,8 @@ section {
 }
 
 pre {
-    background-color: lightgray;
-    overflow-x: scroll;
+    background-color: #f2f5f3;
+    overflow-x: auto;
     overflow-y: hidden;
     padding: 0 20px;
     margin-top: 0;
@@ -87,5 +217,14 @@ main {
     margin-left: 200px;
     padding: 0 24px;
     display: block;
+}
+
+@media (max-width: 700px) {
+    header { align-items: start; flex-direction: column; gap: 18px; padding: 24px; }
+    header h1 { font-size: 28px; }
+    .parity-main { padding: 20px 16px 32px; }
+    .summary { grid-template-columns: 1fr 1fr; }
+    .summary > div { border-bottom: 1px solid #d5ddd8; }
+    .section-heading { align-items: start; flex-direction: column; gap: 4px; }
 }
 

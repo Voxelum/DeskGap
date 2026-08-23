@@ -6,13 +6,7 @@
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <title>Document</title>
     <script type='text/javascript'>
-        window.deskgap.publishServices({
-            'aBrowserService': {
-                getJSONObject: function () {
-                    return { answer: 42 }
-                }
-            }
-        })
+        window.deskgap.invoke('test.browser-value', { answer: 42 })
     </script>
 </head>
 <body>

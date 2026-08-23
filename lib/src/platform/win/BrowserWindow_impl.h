@@ -20,6 +20,20 @@ namespace DeskGap {
 
         std::unique_ptr<Acrylic::AcrylicCompositor> compositor;
         bool active;
+        WPARAM windowState = SIZE_RESTORED;
+        bool fullScreen = false;
+        bool modal = false;
+        bool hasFrame = true;
+        bool hasShadow = true;
+        bool transparent = false;
+        bool systemBackdropActive = false;
+        HMENU menu = nullptr;
+        bool menuBarVisible = true;
+        bool autoHideMenuBar = false;
+        LONG windowedStyle = 0;
+        WINDOWPLACEMENT windowedPlacement { sizeof(WINDOWPLACEMENT) };
+        double aspectRatio = 0;
+        POINT aspectRatioExtraSize { 0, 0 };
 
         HANDLE appIcon {nullptr};
         HANDLE windowIcon {nullptr};

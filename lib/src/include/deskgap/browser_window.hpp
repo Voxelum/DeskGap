@@ -6,6 +6,7 @@
 #include <vector>
 #include <functional>
 #include <optional>
+#include <cstdint>
 #include "menu.hpp"
 #include "webview.hpp"
 
@@ -23,12 +24,12 @@ namespace DeskGap {
             std::function<void()> onResize;
             std::function<void()> onMove;
             std::function<void()> onClose;
-#ifdef __APPLE__
-            std::function<void()> willEnterFullScreen;
-            std::function<void()> didEnterFullScreen;
-            std::function<void()> willExitFullScreen;
-            std::function<void()> didExitFullScreen;
-#endif
+            std::function<void()> onMaximize;
+            std::function<void()> onUnmaximize;
+            std::function<void()> onMinimize;
+            std::function<void()> onRestore;
+            std::function<void()> onEnterFullScreen;
+            std::function<void()> onLeaveFullScreen;
         };
         explicit BrowserWindow(const WebView&, EventCallbacks&&);
         BrowserWindow(const BrowserWindow&) = delete;
@@ -38,10 +39,24 @@ namespace DeskGap {
         void SetResizable(bool);
         void SetHasFrame(bool);
         void SetClosable(bool);
+        void SetParent(const BrowserWindow* parent);
+        void SetModal(bool modal);
 
         void Minimize();
+        void Restore();
+        void Maximize();
+        void Unmaximize();
 
         void Show();
+        void Hide();
+        void Focus();
+        bool IsVisible();
+        bool IsFocused();
+        bool IsMinimized();
+        bool IsMaximized();
+        void SetFullScreen(bool);
+        bool IsFullScreen();
+        void FlashFrame(bool);
         void Center();
 
         void Destroy();
@@ -50,22 +65,33 @@ namespace DeskGap {
         void SetTitle(const std::string& utf8title);
 
         void SetSize(int width, int height, bool animate);
+        void SetContentSize(int width, int height, bool animate);
         void SetPosition(int x, int y, bool animate);
    
         std::array<int, 2> GetSize();
+        std::array<int, 2> GetContentSize();
         std::array<int, 2> GetPosition();
+        void SetTransparent(bool transparent);
+        bool SetHasShadow(bool hasShadow);
 
         void SetMaximumSize(int width, int height);
         void SetMinimumSize(int width, int height);
+        void SetAspectRatio(double ratio, int extraWidth, int extraHeight);
+        std::vector<uint8_t> GetNativeWindowHandle();
 
     #ifdef WIN32
         bool SetAcrylic(bool);
         // waiting winui 3...
         bool SetMica(bool);
+        bool SetBackgroundMaterial(int material);
     #endif
 
     #ifndef __APPLE__
         void SetMenu(const Menu*);
+        void SetAutoHideMenuBar(bool autoHide);
+        bool IsMenuBarAutoHide();
+        void SetMenuBarVisibility(bool visible);
+        bool IsMenuBarVisible();
         void SetIcon(const std::optional<std::string>& iconPath);
     #endif
 

@@ -19,7 +19,7 @@ namespace DeskGap {
         friend class App;
         friend class Tray;
 
-        void SetIcon(const std::string &iconPath);
+        void SetImage(const NativeImage& image);
         void SetTooltip(const std::string &tooltip);
         void OnClick(LPARAM lp);
 
@@ -27,6 +27,7 @@ namespace DeskGap {
         ~Impl();
 
         UINT icon_id_;
+        HICON icon_ = nullptr;
         EventCallbacks callbacks_;
       private:
         void Remove();

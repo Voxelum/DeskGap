@@ -10,6 +10,12 @@
 namespace DeskGap {
     class SystemPreferences {
     public:
+    enum class ThemeSource {
+        SYSTEM = 0,
+        LIGHT = 1,
+        DARK = 2
+    };
+
     #ifdef __APPLE__
     static long GetUserDefaultInteger(const std::string& key);
     static float GetUserDefaultFloat(const std::string& key);
@@ -23,6 +29,11 @@ namespace DeskGap {
     #endif
 
     static bool GetAndWatchDarkMode(std::function<void()>&& onDarkModeToggled);
+    static ThemeSource GetThemeSource();
+    static void SetThemeSource(ThemeSource source);
+    static bool ShouldUseDarkColors();
+    static void AskForMediaAccess(const std::string& mediaType, std::function<void(bool)>&& callback);
+    static bool IsTrustedAccessibilityClient(bool prompt);
     };
 }
 

@@ -1,0 +1,27 @@
+<!doctype html>
+<body>
+<script>
+;(async () => {
+    const response = await fetch('launcher-assets://app/config.json')
+    const script = document.createElement('script')
+    const scriptLoaded = new Promise((resolve, reject) => {
+        script.onload = () => {
+            resolve(window.customProtocolScriptLoaded === true)
+        }
+        script.onerror = () => {
+            console.error('protocol script failed')
+            reject(new Error('Custom protocol script failed to load'))
+        }
+    })
+    script.src = 'launcher-assets://app/loaded.js'
+    document.body.append(script)
+    await window.deskgap.invoke('test.complete', {
+        body: await response.json(),
+        header: response.headers.get('x-deskgap-protocol'),
+        scriptLoaded: await scriptLoaded,
+        status: response.status,
+        statusText: response.statusText,
+    })
+})().catch(error => console.error(error.stack))
+</script>
+</body>

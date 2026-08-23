@@ -45,6 +45,12 @@ namespace DeskGap::JSNativeConvertion {
         }
     };
     template<>
+    struct Native<int> {
+        inline static int From(const Napi::Value& jsValue) {
+            return jsValue.As<Napi::Number>().Int32Value();
+        }
+    };
+    template<>
     struct Native<bool> {
         inline static bool From(const Napi::Value& jsValue) {
             return jsValue.As<Napi::Boolean>().Value();
@@ -86,6 +92,18 @@ namespace DeskGap::JSNativeConvertion {
     struct JS<std::string> {
         inline static Napi::Value From(napi_env env,const std::string& utf8string) {
             return Napi::String::New(env, utf8string);
+        }
+    };
+    template<>
+    struct JS<int> {
+        inline static Napi::Value From(napi_env env, const int& value) {
+            return Napi::Number::New(env, value);
+        }
+    };
+    template<>
+    struct JS<bool> {
+        inline static Napi::Value From(napi_env env, const bool& value) {
+            return Napi::Boolean::New(env, value);
         }
     };
     template<class E>

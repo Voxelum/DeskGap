@@ -1,8 +1,15 @@
 #import <Cocoa/Cocoa.h>
+#import <AVFoundation/AVFoundation.h>
+#import <ApplicationServices/ApplicationServices.h>
+#include <atomic>
 #include "system_preferences.hpp"
 #include "./util/string_convert.h"
 
 namespace DeskGap {
+    namespace {
+        std::atomic<SystemPreferences::ThemeSource> themeSource(SystemPreferences::ThemeSource::SYSTEM);
+    }
+
     long SystemPreferences::GetUserDefaultInteger(const std::string& key) {
         return [[NSUserDefaults standardUserDefaults] integerForKey: NSStr(key)];
     }
@@ -86,5 +93,52 @@ namespace DeskGap {
         else {
             return false;
         }
+    }
+
+    SystemPreferences::ThemeSource SystemPreferences::GetThemeSource() {
+        return themeSource.load();
+    }
+
+    void SystemPreferences::SetThemeSource(ThemeSource source) {
+        themeSource.store(source);
+        if (@available(macOS 10.14, *)) {
+            switch (source) {
+            case ThemeSource::SYSTEM: [NSApp setAppearance: nil]; break;
+            case ThemeSource::LIGHT: [NSApp setAppearance: [NSAppearance appearanceNamed: NSAppearanceNameAqua]]; break;
+            case ThemeSource::DARK: [NSApp setAppearance: [NSAppearance appearanceNamed: NSAppearanceNameDarkAqua]]; break;
+            }
+        }
+    }
+
+    bool SystemPreferences::ShouldUseDarkColors() {
+        ThemeSource source = themeSource.load();
+        if (source == ThemeSource::DARK) return true;
+        if (source == ThemeSource::LIGHT) return false;
+        if (@available(macOS 10.14, *)) {
+            NSAppearanceName match = [[NSApp effectiveAppearance] bestMatchFromAppearancesWithNames: @[
+                NSAppearanceNameAqua,
+                NSAppearanceNameDarkAqua
+            ]];
+            return [match isEqualToString: NSAppearanceNameDarkAqua];
+        }
+        return false;
+    }
+
+    void SystemPreferences::AskForMediaAccess(const std::string& mediaType, std::function<void(bool)>&& callback) {
+        NSString* avMediaType = mediaType == "microphone" ? AVMediaTypeAudio
+            : mediaType == "camera" ? AVMediaTypeVideo : nil;
+        if (avMediaType == nil) {
+            callback(false);
+            return;
+        }
+        auto sharedCallback = std::make_shared<std::function<void(bool)>>(std::move(callback));
+        [AVCaptureDevice requestAccessForMediaType:avMediaType completionHandler:^(BOOL granted) {
+            (*sharedCallback)(granted);
+        }];
+    }
+
+    bool SystemPreferences::IsTrustedAccessibilityClient(bool prompt) {
+        NSDictionary* options = @{ (__bridge NSString*)kAXTrustedCheckOptionPrompt: @(prompt) };
+        return AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
     }
 }

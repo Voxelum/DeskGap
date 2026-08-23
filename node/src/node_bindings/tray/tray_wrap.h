@@ -13,6 +13,7 @@ namespace DeskGap {
         void SetTooltip(const Napi::CallbackInfo &info);
         void SetIcon(const Napi::CallbackInfo &info);
         void SetTitle(const Napi::CallbackInfo &info);
+        void Destroy(const Napi::CallbackInfo &info);
         void PopupMenu(const Napi::CallbackInfo &info);
         void SetContextMenu(const Napi::CallbackInfo &info);
 

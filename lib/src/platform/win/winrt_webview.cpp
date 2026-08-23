@@ -2,6 +2,7 @@
 #include <memory>
 #include <string>
 #include <optional>
+#include <unordered_map>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -11,6 +12,7 @@
 #include <Windows.h>
 #include <objbase.h>
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Web.UI.Interop.h>
 #include <winrt/Windows.Storage.h>
 #include <winrt/Windows.Storage.Streams.h>
@@ -42,9 +44,9 @@ namespace {
     const wchar_t* const WebViewHostWndClassName = L"DeskGapWinRTWebViewHost";
     const winrt::hstring LocalContentIdentifier = L"DeskGapLocalContent";
 
-    const wchar_t MessageNotifyStringPrefix = L'm';
     const wchar_t WindowDragNotifyStringPrefix = L'd';
     const wchar_t TitleUpdatedNotifyStringPrefix = L't';
+    const wchar_t ConsoleNotifyStringPrefix = L'c';
 
     std::unique_ptr<winrt::hstring> preloadScript;
 }
@@ -83,16 +85,35 @@ namespace DeskGap {
 
         winrt::Windows::Web::UI::Interop::WebViewControl::NavigationCompleted_revoker navigationCompletedRevoker;
         winrt::Windows::Web::UI::Interop::WebViewControl::NavigationStarting_revoker navigationStartingRevoker;
+        winrt::Windows::Web::UI::Interop::WebViewControl::NewWindowRequested_revoker newWindowRequestedRevoker;
         winrt::Windows::Web::UI::Interop::WebViewControl::ScriptNotify_revoker scriptNotifyRevoker;
 
         StreamResolver streamResolver;
 
         WebView::EventCallbacks callbacks;
+        std::optional<std::string> allowedNavigationUrl;
+        uint64_t nextPolicyRequestId = 1;
+        unsigned int policyCancelledCompletions = 0;
+        std::unordered_map<uint64_t, std::string> pendingNavigationPolicies;
 
         Impl(WebView::EventCallbacks& callbacks):
             callbacks(std::move(callbacks)),
             process(nullptr), webViewControl(nullptr) {
 
+        }
+
+        ~Impl() {
+            navigationCompletedRevoker.revoke();
+            navigationStartingRevoker.revoke();
+            newWindowRequestedRevoker.revoke();
+            scriptNotifyRevoker.revoke();
+            if (webViewControl != nullptr) {
+                webViewControl.Close();
+                webViewControl = nullptr;
+            }
+            if (process != nullptr) {
+                process = nullptr;
+            }
         }
 
         void PrepareScript() {
@@ -107,6 +128,8 @@ namespace DeskGap {
                 height
             ));
         }
+
+        virtual void ParentWindowPositionChanged() override { }
 
         virtual void InitWithParent(HWND parentWnd) override {
             controlWnd = parentWnd;
@@ -139,7 +162,45 @@ namespace DeskGap {
             navigationCompletedRevoker = webViewControl.NavigationCompleted(
                 winrt::auto_revoke, 
                 [this](const auto&, const WebViewControlNavigationCompletedEventArgs& e) {
-                    this->callbacks.didFinishLoad();
+                    if (!e.IsSuccess() && policyCancelledCompletions > 0) {
+                        --policyCancelledCompletions;
+                        return;
+                    }
+                    if (e.IsSuccess()) {
+                        this->callbacks.didFinishLoad();
+                    }
+                    else {
+                        this->callbacks.didFailLoad(
+                            -static_cast<int>(e.WebErrorStatus()),
+                            "WinRT navigation error " + std::to_string(static_cast<int>(e.WebErrorStatus())),
+                            winrt::to_string(e.Uri().AbsoluteUri())
+                        );
+                    }
+                }
+            );
+
+            navigationStartingRevoker = webViewControl.NavigationStarting(
+                winrt::auto_revoke,
+                [this](const auto&, const WebViewControlNavigationStartingEventArgs& e) {
+                    std::string url = winrt::to_string(e.Uri().AbsoluteUri());
+                    if (allowedNavigationUrl.has_value() && *allowedNavigationUrl == url) {
+                        allowedNavigationUrl.reset();
+                        this->callbacks.didStartNavigation(url, false);
+                        return;
+                    }
+                    e.Cancel(true);
+                    ++policyCancelledCompletions;
+                    uint64_t requestId = nextPolicyRequestId++;
+                    pendingNavigationPolicies.emplace(requestId, url);
+                    callbacks.onNavigationPolicyRequest(requestId, url, false);
+                }
+            );
+
+            newWindowRequestedRevoker = webViewControl.NewWindowRequested(
+                winrt::auto_revoke,
+                [this](const auto&, const WebViewControlNewWindowRequestedEventArgs& e) {
+                    e.Handled(true);
+                    callbacks.onNewWindowRequested(winrt::to_string(e.Uri().AbsoluteUri()), "", "");
                 }
             );
 
@@ -148,13 +209,10 @@ namespace DeskGap {
                 winrt::auto_revoke,
                 [this](const auto&, const WebViewControlScriptNotifyEventArgs& e) {
                     winrt::hstring notifyString = e.Value();
+                    if (notifyString.empty()) return;
                     wchar_t notifyStringPrefix = notifyString[0];
                     std::string notifyContent = winrt::to_string(notifyString.c_str() + 1);
                     switch (notifyStringPrefix) {
-                    case MessageNotifyStringPrefix: {
-                        callbacks.onStringMessage(std::move(notifyContent));
-                        break;
-                    }
                     case WindowDragNotifyStringPrefix: {
                         if (HWND windowWnd = GetAncestor(controlWnd, GA_ROOT); windowWnd != nullptr) {
                             if (SetFocus(windowWnd) != nullptr) {
@@ -167,15 +225,38 @@ namespace DeskGap {
                         callbacks.onPageTitleUpdated(std::move(notifyContent));
                         break;
                     }
+                    case ConsoleNotifyStringPrefix: {
+                        if (!notifyContent.empty()) {
+                            const char* level = notifyContent[0] == 'd' ? "debug"
+                                : notifyContent[0] == 'w' ? "warning"
+                                : notifyContent[0] == 'e' ? "error" : "info";
+                            callbacks.onConsoleMessage(level, notifyContent.substr(1));
+                        }
+                        break;
+                    }
                     default:
                         break;
                     }
                 }
             );
         }; 
+
+        void ResolveNavigationPolicy(uint64_t requestId, bool allow) {
+            auto request = pendingNavigationPolicies.find(requestId);
+            if (request == pendingNavigationPolicies.end()) return;
+            std::string url = std::move(request->second);
+            pendingNavigationPolicies.erase(request);
+            if (!allow || webViewControl == nullptr) return;
+            allowedNavigationUrl = url;
+            webViewControl.Navigate(Uri(winrt::to_hstring(url)));
+        }
     };
 
-    WinRTWebView::WinRTWebView(EventCallbacks&& callbacks, const std::string& preloadScriptString) {
+    WinRTWebView::WinRTWebView(
+        EventCallbacks&& callbacks,
+        const std::string& preloadScriptString,
+        SessionOptions&&
+    ) {
         std::string script;
         script.reserve(BIN2CODE_DG_PRELOAD_WINRT_JS_SIZE + preloadScriptString.size());
         script.assign(BIN2CODE_DG_PRELOAD_WINRT_JS_CONTENT, BIN2CODE_DG_PRELOAD_WINRT_JS_SIZE);
@@ -196,13 +277,17 @@ namespace DeskGap {
     }
 
 
-    void WinRTWebView::LoadLocalFile(const std::string& path) {
+    void WinRTWebView::LoadLocalFile(const std::string& path, const std::string& fragment, const std::string&) {
         winrtImpl_->PrepareScript();
         fs::path fsPath(path);
         winrtImpl_->streamResolver.setFolder(fsPath.parent_path());
 
         Uri uri = winrtImpl_->webViewControl.BuildLocalStreamUri(LocalContentIdentifier, winrt::to_hstring(fsPath.filename().string()));
-        winrtImpl_->webViewControl.NavigateToLocalStreamUri(uri, winrtImpl_->streamResolver);
+        std::wstring uriWithFragment(uri.AbsoluteUri());
+        uriWithFragment.append(L"#");
+        uriWithFragment.append(winrt::to_hstring(fragment));
+        winrtImpl_->allowedNavigationUrl = winrt::to_string(uriWithFragment);
+        winrtImpl_->webViewControl.NavigateToLocalStreamUri(Uri(uriWithFragment), winrtImpl_->streamResolver);
     }
 
     void WinRTWebView::LoadRequest(
@@ -239,28 +324,29 @@ namespace DeskGap {
                 );
             }
         }
+        winrtImpl_->allowedNavigationUrl = urlString;
         winrtImpl_->webViewControl.NavigateWithHttpRequestMessage(httpMessage);
     }
 
     void WinRTWebView::ExecuteJavaScript(const std::string& scriptString, std::optional<JavaScriptExecutionCallback>&& optionalCallback) {
-        // IAsyncOperation<winrt::hstring> resultPromise = winrtImpl_->webViewControl.InvokeScriptAsync(
-        //     L"eval", { winrt::to_hstring(scriptString) }
-        // );
-        // if (optionalCallback.has_value()) {
-        //     resultPromise.Completed([
-        //         callback = std::move(*optionalCallback)
-        //     ](const auto& resultPromise, AsyncStatus status) {
-        //         if (status == AsyncStatus::Completed) {
-        //             callback(std::nullopt);
-        //         }
-        //         else {
-        //             winrt::hresult_error error(resultPromise.ErrorCode());
-        //             callback(std::make_optional<std::string>(
-        //                 "HRESULT " + std::to_string(error.code()) + ": " + winrt::to_string(error.message())
-        //             ));
-        //         }
-        //     });
-        // }
+        std::vector<winrt::hstring> arguments { winrt::to_hstring(scriptString) };
+        IAsyncOperation<winrt::hstring> operation = winrtImpl_->webViewControl.InvokeScriptAsync(
+            L"eval", std::move(arguments)
+        );
+        if (!optionalCallback.has_value()) return;
+
+        operation.Completed([
+            callback = std::move(*optionalCallback)
+        ](const auto& completedOperation, AsyncStatus status) mutable {
+            if (status == AsyncStatus::Completed) {
+                callback(std::nullopt);
+                return;
+            }
+            winrt::hresult_error error(completedOperation.ErrorCode());
+            callback(std::make_optional<std::string>(
+                "HRESULT " + std::to_string(error.code()) + ": " + winrt::to_string(error.message())
+            ));
+        });
     }
 
     void WinRTWebView::SetDevToolsEnabled(bool enabled) { 
@@ -272,7 +358,17 @@ namespace DeskGap {
         winrtImpl_->webViewControl.Refresh();
     }
 
-    WinRTWebView::~WinRTWebView() {
-        SetWindowLongPtrW(winrtImpl_->controlWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(nullptr));
+    void WinRTWebView::ResolveNavigationPolicy(uint64_t requestId, bool allow) {
+        winrtImpl_->ResolveNavigationPolicy(requestId, allow);
     }
+
+    void WinRTWebView::ResolveCustomProtocolRequest(
+        uint64_t,
+        int,
+        const std::string&,
+        const std::vector<HTTPHeader>&,
+        std::vector<uint8_t>&&
+    ) {}
+
+    WinRTWebView::~WinRTWebView() {}
 }

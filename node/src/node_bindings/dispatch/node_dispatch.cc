@@ -27,7 +27,10 @@ namespace DeskGap {
         auto data = new ThreadSafeFunctionData { std::move(getArgs), nullptr };
         if (holdWhileQueuing_) {
             status = napi_acquire_threadsafe_function(threadsafe_function_);
-            assert(status == napi_ok);
+            if (status != napi_ok) {
+                delete data;
+                return;
+            }
 
             data->holdedThreadSafeFunction = threadsafe_function_;
         }
@@ -36,7 +39,12 @@ namespace DeskGap {
             data,
             napi_tsfn_blocking
         );
-        assert(status == napi_ok);
+        if (status != napi_ok) {
+            if (data->holdedThreadSafeFunction != nullptr) {
+                napi_release_threadsafe_function(data->holdedThreadSafeFunction, napi_tsfn_release);
+            }
+            delete data;
+        }
     }
 
     void JSFunctionForUI::Call() {
@@ -56,17 +64,15 @@ namespace DeskGap {
             catch (const Napi::Error& e) {
                 napi_fatal_exception(e.Env(), e.Value());
             }
-            if (data->holdedThreadSafeFunction != nullptr) {
-                napi_status status = napi_release_threadsafe_function(data->holdedThreadSafeFunction, napi_tsfn_release);
-                assert(status == napi_ok);
-            }
+        }
+        if (data->holdedThreadSafeFunction != nullptr) {
+            napi_release_threadsafe_function(data->holdedThreadSafeFunction, napi_tsfn_release);
         }
 
         delete data;
     }
     JSFunctionForUI::~JSFunctionForUI() {
-        napi_status status = napi_release_threadsafe_function(threadsafe_function_, napi_tsfn_release);
-        assert(status == napi_ok);
+        napi_release_threadsafe_function(threadsafe_function_, napi_tsfn_release);
     }
 
     std::shared_ptr<JSFunctionForUI> JSFunctionForUI::Persist(const Napi::Function& func, bool holdWhileQueuing) {

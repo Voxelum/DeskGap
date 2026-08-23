@@ -1,0 +1,19 @@
+<!doctype html>
+<script>
+window.deskgap.onChannel(async ({ channel }) => {
+    const reader = channel.readable.getReader()
+    const writer = channel.writable.getWriter()
+    let received = 0
+    try {
+        while (received < 320 * 1024) {
+            const { value, done } = await reader.read()
+            if (done) throw new Error('Channel closed before the complete payload arrived')
+            received += value.byteLength
+            await writer.write(value)
+        }
+        channel.close()
+    } catch (error) {
+        channel.close(1011, error.message)
+    }
+})
+</script>

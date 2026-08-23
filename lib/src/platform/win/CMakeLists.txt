@@ -27,13 +27,10 @@ find_program(NUGET_EXE NAMES nuget [../../../../])
     endif()
 
     exec_program(${NUGET_EXE}
-        ARGS install "Microsoft.Web.WebView2" -Version 1.0.1072.54 -ExcludeVersion -OutputDirectory ${CMAKE_BINARY_DIR}/packages)
+        ARGS install "Microsoft.Web.WebView2" -Version 1.0.1774.30 -ExcludeVersion -OutputDirectory ${CMAKE_BINARY_DIR}/packages)
     exec_program(${NUGET_EXE}
         ARGS install "Microsoft.Windows.ImplementationLibrary" -ExcludeVersion -OutputDirectory ${CMAKE_BINARY_DIR}/packages)
 
-add_library(deskgap_platform_trident_preload_script STATIC
-    ${CMAKE_CURRENT_BINARY_DIR}/dg_preload_trident.c
-)
 add_library(deskgap_platform_winrt_preload_script STATIC
     ${CMAKE_CURRENT_BINARY_DIR}/dg_preload_winrt.c
 )
@@ -43,7 +40,6 @@ add_library(deskgap_platform_webview2_preload_script STATIC
 
 target_link_libraries(deskgap_winrt PRIVATE deskgap_platform_winrt_preload_script)
 
-bin2code(${CMAKE_CURRENT_LIST_DIR}/dg_preload_trident.js ${CMAKE_CURRENT_BINARY_DIR}/dg_preload_trident.c)
 bin2code(${CMAKE_CURRENT_LIST_DIR}/dg_preload_winrt.js ${CMAKE_CURRENT_BINARY_DIR}/dg_preload_winrt.c)
 bin2code(${CMAKE_CURRENT_LIST_DIR}/dg_preload_webview2.js ${CMAKE_CURRENT_BINARY_DIR}/dg_preload_webview2.c)
 
@@ -52,10 +48,16 @@ target_sources(deskgap_platform PRIVATE
     app.cpp
     dialog.cpp
     menu.cpp
+    native_image.cpp
     dispatch.cpp
     shell.cpp
+    screen.cpp
+    clipboard.cpp
+    power_monitor.cpp
+    notification.cpp
+    credentials.cpp
+    external_window.cpp
     system_preferences.cpp
-    trident_webview.cpp
     webview2_webview.cpp
     webview.cpp
     exception.cpp
@@ -70,8 +72,8 @@ target_sources(deskgap_platform PRIVATE
     util/winrt.cpp
 )
 
-target_link_libraries(deskgap_platform PRIVATE deskgap_platform_trident_preload_script deskgap_winrt deskgap_platform_webview2_preload_script)
-target_link_libraries(deskgap_platform INTERFACE Version.lib Shlwapi.lib ${CMAKE_BINARY_DIR}/packages/Microsoft.Web.WebView2/build/native/x86/WebView2LoaderStatic.lib ${CMAKE_BINARY_DIR}/packages/Microsoft.Windows.ImplementationLibrary/build/native/Microsoft.Windows.ImplementationLibrary.targets)
+target_link_libraries(deskgap_platform PRIVATE deskgap_winrt deskgap_platform_webview2_preload_script)
+target_link_libraries(deskgap_platform INTERFACE Advapi32.lib Dwmapi.lib WindowsApp.lib Version.lib Shlwapi.lib Shcore.lib Propsys.lib Windowscodecs.lib ${CMAKE_BINARY_DIR}/packages/Microsoft.Web.WebView2/build/native/x64/WebView2LoaderStatic.lib ${CMAKE_BINARY_DIR}/packages/Microsoft.Windows.ImplementationLibrary/build/native/Microsoft.Windows.ImplementationLibrary.targets)
 target_include_directories(deskgap_platform SYSTEM PUBLIC ${CMAKE_BINARY_DIR}/packages/Microsoft.Web.WebView2/build/native/include ${CMAKE_BINARY_DIR}/packages/Microsoft.Windows.ImplementationLibrary/include)
 
 target_link_options(deskgap_platform PUBLIC "/DELAYLOAD:deskgap_winrt.dll")

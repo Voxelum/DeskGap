@@ -35,6 +35,7 @@ export declare interface EventEmitter<EventMap extends IEventMap, Sender = null>
 export interface TriggerOptions<Sender> {
     sender?: Sender;
     defaultAction?: () => void;
+    eventProperties?: Record<string, unknown>;
 }
 
 export class EventEmitter<EventMap extends IEventMap, Sender = null> extends VanillaEventEmitter {
@@ -47,6 +48,7 @@ export class EventEmitter<EventMap extends IEventMap, Sender = null> extends Van
             get sender() { return sender; },
             preventDefault() { isDefaultPrevented = true },
         }
+        Object.assign(eventObject, theOptions.eventProperties);
         
         try {
             return this.emit(eventName, eventObject as any, ...args);

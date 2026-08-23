@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.20)
 cmake_policy(SET CMP0091 NEW)
 
 if(WIN32)
@@ -6,7 +6,7 @@ if(WIN32)
 endif()
 
 if(APPLE)
-    set(ENV{MACOSX_DEPLOYMENT_TARGET} 10.11)
+    set(ENV{MACOSX_DEPLOYMENT_TARGET} 13.5)
 endif()
 
 include(FetchContent)
@@ -45,55 +45,44 @@ if(WIN32)
 endif()
 add_subdirectory(js)
 
-set(NOD_NODE_VERSION v16.14.0)
-if(NOT DEFINED NOD_NODE_OS)
-    if (UNIX)
-        if (APPLE)
-            set(NOD_NODE_OS darwin)
-        else()
-            set(NOD_NODE_OS linux)
-        endif()
-    else()
-        set(NOD_NODE_OS win32)
-    endif()
-endif()
-
-if(NOT DEFINED NOD_NODE_ARCH)
-    if(CMAKE_SIZEOF_VOID_P EQUAL 4)
-        set(NOD_NODE_ARCH x86)
-    else()
-        set(NOD_NODE_ARCH x64)
-    endif()
-endif()
-set(NOD_NODE_CONFIG -smallicu)
-
-FetchContent_Declare(
-    libnode
-    URL https://github.com/ci010/libnode/releases/download/${NOD_NODE_VERSION}/libnode-${NOD_NODE_VERSION}-${NOD_NODE_OS}-${NOD_NODE_ARCH}${NOD_NODE_CONFIG}.zip
-)
-FetchContent_MakeAvailable(libnode)
+add_subdirectory(libnode)
 
 add_executable(DeskGapNode
     src/main.cc
     src/node_bindings/index.cc
     src/node_bindings/dispatch/node_dispatch.cc
     src/node_bindings/dispatch/ui_dispatch.cc
+    src/node_bindings/external_window/external_window_wrap.cc
     src/node_bindings/app/app_wrap.cc
     src/node_bindings/dialog/dialog_wrap.cc
+    src/node_bindings/native_image/native_image_wrap.cc
     src/node_bindings/tray/tray_wrap.cc
     src/node_bindings/menu/menu_wrap.cc
     src/node_bindings/shell/shell_wrap.cc
+    src/node_bindings/screen/screen_wrap.cc
+    src/node_bindings/clipboard/clipboard_wrap.cc
+    src/node_bindings/power_monitor/power_monitor_wrap.cc
+    src/node_bindings/notification/notification_wrap.cc
+    src/node_bindings/credentials/credentials_wrap.cc
     src/node_bindings/system_preferences/system_preferences_wrap.cc
+    src/node_bindings/windows_app_installer/windows_app_installer_wrap.cc
     src/node_bindings/webview/webview_wrap.cc
     src/node_bindings/window/browser_window_wrap.cc
 )
+if(WIN32)
+    set_source_files_properties(
+        src/node_bindings/windows_app_installer/windows_app_installer_wrap.cc
+        PROPERTIES COMPILE_OPTIONS "/std:c++17"
+    )
+endif()
 set_target_properties(
     DeskGapNode PROPERTIES
     OUTPUT_NAME DeskGap
-    CXX_STANDARD 17
+    CXX_STANDARD 20
 )
 target_link_libraries(DeskGapNode PUBLIC deskgap libnode DeskGapNodeScripts)
 target_include_directories(DeskGapNode PRIVATE ${DG_NODE_MODULES_DIR}/node-addon-api)
+target_compile_options(DeskGapNode PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/Zc:__cplusplus>)
 
 if(APPLE)
     set_target_properties(
@@ -131,5 +120,20 @@ add_custom_target(DeskGapNodeResources ALL ${CMAKE_COMMAND} -E copy_directory ${
 add_dependencies(DeskGapNodeResources DeskGapNode)
 
 if("${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
-    add_custom_target(DeskGapWinRTDLL ALL ${CMAKE_COMMAND} -E copy $<TARGET_FILE:deskgap_winrt> $<TARGET_FILE_DIR:DeskGapNode>)
+    add_executable(
+        DeskGapBootstrap WIN32
+        src/bootstrap/main.cpp
+        src/resources/win/App.manifest
+    )
+    target_compile_features(DeskGapBootstrap PRIVATE cxx_std_20)
+    target_include_directories(DeskGapBootstrap PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/libnode/src/deps/zstd/lib)
+    target_link_libraries(DeskGapBootstrap PRIVATE deskgap_zstd bcrypt shell32)
+
+    add_custom_command(
+        TARGET DeskGapNode
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:deskgap_winrt>
+            $<TARGET_FILE_DIR:DeskGapNode>
+    )
 endif()

@@ -9,18 +9,15 @@ process.on('unhandledRejection', (error) => {
 });
 
 let deskGapPlatform = null;
-if (process.platform === 'darwin') {
-    deskGapPlatform = 'darwin-x64';
-}
-else if (process.platform === 'win32') {
-    deskGapPlatform = 'win32-ia32';
-}
-else if (process.platform === 'linux') {
-    deskGapPlatform = 'linux-x64';
+if (
+    (process.platform === 'darwin' || process.platform === 'win32' || process.platform === 'linux') &&
+    process.arch === 'x64'
+) {
+    deskGapPlatform = `${process.platform}-${process.arch}`;
 }
 
 if (deskGapPlatform == null) {
-    console.error('DeskGap doesn’t support your platform: ' + process.platform);
+    console.error(`DeskGap doesn't support your platform: ${process.platform}-${process.arch}`);
     process.exit(1);
 }
 

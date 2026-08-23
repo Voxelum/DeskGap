@@ -3,8 +3,10 @@
         "target": "es6",
         "noImplicitAny": true,
         "strictNullChecks": true,
+        "strictPropertyInitialization": false,
         "module": "commonjs",
         "lib": ["es2017"],
+        "types": ["node"],
         "removeComments": true
     }
 }

@@ -26,6 +26,7 @@ struct DeskGap::BrowserWindow::Impl {
     std::optional<NSPoint> trafficLightPosition;
 
     bool exitingFullScreen = false;
+    NSInteger attentionRequest = 0;
 };
 
 #endif

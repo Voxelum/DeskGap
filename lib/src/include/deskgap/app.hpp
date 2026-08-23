@@ -12,6 +12,8 @@ namespace DeskGap {
         struct EventCallbacks {
             std::function<void()> onReady;
             std::function<void()> beforeQuit;
+            std::function<void()> onActivate;
+            std::function<void(const std::string&)> onOpenURL;
         };
 
         using SecondInstanceEventCallback = std::function<void(const std::string &&, const std::string &&)>;
@@ -23,6 +25,9 @@ namespace DeskGap {
         static bool SetAsDefaultProtocolClient(const std::string &);
         static bool IsDefaultProtocolClient(const std::string &);
         static std::string GetLocale();
+        static void SetAppUserModelId(const std::string& id);
+        static bool SetDockVisible(bool visible);
+        static bool IsDockVisible();
         static void Run(EventCallbacks&& callbacks);
         static void Exit(int exitCode);
 
@@ -36,6 +41,8 @@ namespace DeskGap {
             PICTURES = 6,
             VIDEOS = 7,
             HOME = 8,
+            LOCAL_APP_DATA = 9,
+            CACHE = 10,
         };
     #ifdef __APPLE__
         static void SetMenu(std::optional<std::reference_wrapper<Menu>> menu);

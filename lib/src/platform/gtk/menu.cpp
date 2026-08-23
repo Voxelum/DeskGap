@@ -81,9 +81,9 @@ namespace DeskGap {
             { "end", GDK_KEY_End },
             { "pageup", GDK_KEY_Page_Up },
             { "pagedown", GDK_KEY_Page_Down },
-            { "escape", GDK_KEY_Escape },
+            { "esc", GDK_KEY_Escape },
             { "volumedown", GDK_KEY_AudioLowerVolume },
-            { "Volumeup", GDK_KEY_AudioRaiseVolume },
+            { "volumeup", GDK_KEY_AudioRaiseVolume },
             { "volumemute", GDK_KEY_AudioMute },
             { "medianexttrack", GDK_KEY_AudioNext },
             { "mediaprevioustrack", GDK_KEY_AudioPrev },
@@ -106,6 +106,14 @@ namespace DeskGap {
             }
             else if (auto it = kKeysByToken.find(token); it != kKeysByToken.end()) {
                 key = it->second;
+            }
+            else if (token.length() >= 2 && token.length() <= 3 && token.front() == 'f') {
+                int functionKey = 0;
+                for (auto it = token.begin() + 1; it != token.end() && *it >= '0' && *it <= '9'; ++it) {
+                    functionKey = functionKey * 10 + (*it - '0');
+                }
+                if (functionKey < 1 || functionKey > 24) continue;
+                key = GDK_KEY_F1 + functionKey - 1;
             }
             else if (!token.empty()) {
                 key = gdk_unicode_to_keyval(token.front());

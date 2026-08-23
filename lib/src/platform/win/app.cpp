@@ -1,10 +1,10 @@
 #include "app.hpp"
 #include "./util/wstring_utf8.h"
 #include "dispatch_wnd.hpp"
+#include "power_monitor.hpp"
 #include "process_singleton.hpp"
 #include "util/reg_key.hpp"
 #include "util/ui_theme_host.hpp"
-#include "webview_impl.h"
 #include <cstdlib>
 #include <fileapi.h>
 #include <filesystem>
@@ -16,6 +16,12 @@ namespace DeskGap {
     extern LRESULT OnTrayClick(WPARAM wp, LPARAM lp);
     std::unique_ptr<ProcessSingleton> process_singleton_;
     std::unique_ptr<UXThemeHost> theme_host_;
+
+    namespace {
+        std::wstring ProtocolCommand() {
+            return L"\"" + UTF8ToWString(App::GetExecutablePath()) + L"\" \"%1\"";
+        }
+    }
 
     bool App::SetAsDefaultProtocolClient(const std::string &protocol) {
         // HKEY_CLASSES_ROOT
@@ -35,7 +41,7 @@ namespace DeskGap {
         if (protocol.empty())
             return false;
 
-        std::wstring exe(UTF8ToWString(GetExecutablePath()));
+        std::wstring command = ProtocolCommand();
         // if (!GetProtocolLaunchPath(args, &exe))
         //     return false;
 
@@ -53,7 +59,7 @@ namespace DeskGap {
             return false;
 
         RegKey commandKey(root, cmdPath.c_str(), KEY_ALL_ACCESS);
-        if (FAILED(commandKey.WriteValue(L"", exe.c_str())))
+        if (FAILED(commandKey.WriteValue(L"", command.c_str())))
             return false;
 
         return true;
@@ -65,11 +71,18 @@ namespace DeskGap {
         return WStringToUTF8(buf);
     }
 
+    void App::SetAppUserModelId(const std::string& id) {
+        SetCurrentProcessExplicitAppUserModelID(UTF8ToWString(id.c_str()).c_str());
+    }
+
+    bool App::SetDockVisible(bool) { return false; }
+    bool App::IsDockVisible() { return false; }
+
     bool App::IsDefaultProtocolClient(const std::string &protocol) {
         if (protocol.empty())
             return false;
 
-        std::wstring exe(UTF8ToWString(GetExecutablePath()));
+        std::wstring command = ProtocolCommand();
         // if (!GetProtocolLaunchPath(args, &exe))
         //     return false;
 
@@ -97,7 +110,7 @@ namespace DeskGap {
             return false;
 
         // Default value is the same as current file path
-        return keyVal == exe;
+        return keyVal == command;
     }
 
     bool App::RequestSingleInstanceLock(SecondInstanceEventCallback &&callbacks) {
@@ -167,6 +180,9 @@ namespace DeskGap {
                 return 0;
             } else if (msg == DG_TRAY_MSG) {
                 return DeskGap::OnTrayClick(wp, lp);
+            } else if (msg == WM_POWERBROADCAST) {
+                PowerMonitor::ProcessPowerBroadcast(wp);
+                return TRUE;
             } else if (msg == WM_COPYDATA) {
                 // Handle the WM_COPYDATA message from another process
                 const COPYDATASTRUCT *cds = reinterpret_cast<COPYDATASTRUCT *>(lp);
@@ -205,10 +221,6 @@ namespace DeskGap {
             } else if (msg.message == WM_QUIT) {
                 return;
             } else if (msg.hwnd) {
-                if (tridentWebViewTranslateMessage != nullptr) {
-                    if (tridentWebViewTranslateMessage(&msg))
-                        continue;
-                }
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
@@ -221,7 +233,8 @@ namespace DeskGap {
         static std::unordered_map<PathName, KNOWNFOLDERID> folderIdByName{
             {PathName::APP_DATA, FOLDERID_RoamingAppData}, {PathName::DESKTOP, FOLDERID_Desktop}, {PathName::DOCUMENTS, FOLDERID_Documents},
             {PathName::DOWNLOADS, FOLDERID_Downloads},     {PathName::MUSIC, FOLDERID_Music},     {PathName::PICTURES, FOLDERID_Pictures},
-            {PathName::VIDEOS, FOLDERID_Videos},           {PathName::HOME, FOLDERID_Profile}};
+            {PathName::VIDEOS, FOLDERID_Videos},           {PathName::HOME, FOLDERID_Profile},   {PathName::LOCAL_APP_DATA, FOLDERID_LocalAppData},
+            {PathName::CACHE, FOLDERID_LocalAppData}};
 
         if (name == PathName::TEMP) {
             DWORD length = GetTempPathW(0, NULL);

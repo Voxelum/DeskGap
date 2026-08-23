@@ -34,6 +34,16 @@ using std::make_shared;
     callbacks_.onReady();
 }
 
+- (void)applicationDidBecomeActive:(NSNotification *)notification {
+    callbacks_.onActivate();
+}
+
+- (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls {
+    for (NSURL* url in urls) {
+        callbacks_.onOpenURL(CXXStr(url.absoluteString));
+    }
+}
+
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
     return NO;
 }
@@ -61,6 +71,27 @@ namespace DeskGap {
         std::exit(exitCode);
     }
 
+    std::string App::GetLocale() {
+        return CXXStr([[NSLocale currentLocale] localeIdentifier]);
+    }
+
+    void App::SetAppUserModelId(const std::string&) {
+    }
+
+    bool App::SetDockVisible(bool visible) {
+        return [NSApp setActivationPolicy: visible
+            ? NSApplicationActivationPolicyRegular
+            : NSApplicationActivationPolicyAccessory];
+    }
+
+    bool App::IsDockVisible() {
+        return NSApp.activationPolicy == NSApplicationActivationPolicyRegular;
+    }
+
+    std::string App::GetExecutablePath() {
+        return CXXStr([[NSBundle mainBundle] executablePath]);
+    }
+
     std::string App::GetPath(PathName name) {
         static std::unordered_map<PathName, NSSearchPathDirectory> searchPathDirectoryByName {
             { PathName::APP_DATA,  NSApplicationSupportDirectory },
@@ -70,6 +101,8 @@ namespace DeskGap {
             { PathName::MUSIC, NSMusicDirectory },
             { PathName::PICTURES, NSPicturesDirectory },
             { PathName::VIDEOS, NSMoviesDirectory },
+            { PathName::LOCAL_APP_DATA, NSApplicationSupportDirectory },
+            { PathName::CACHE, NSCachesDirectory },
         };
 
         if (name == PathName::TEMP) {

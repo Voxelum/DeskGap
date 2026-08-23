@@ -20,6 +20,8 @@ namespace DeskGap {
     		~AccelGroupMenu();
     	};
     	std::optional<AccelGroupMenu> accelGroupMenu;
+        bool menuBarVisible = true;
+        bool autoHideMenuBar = false;
 
     	BrowserWindow::EventCallbacks callbacks;
 
@@ -32,12 +34,19 @@ namespace DeskGap {
         gulong focusOutEventConnection;
         static bool HandleFocusOutEvent(GtkWidget*, GdkEvent*, BrowserWindow*);
 
+        gulong keyPressEventConnection;
+        static bool HandleKeyPressEvent(GtkWidget*, GdkEventKey*, BrowserWindow*);
+
+        gulong windowStateEventConnection;
+        static bool HandleWindowStateEvent(GtkWidget*, GdkEventWindowState*, BrowserWindow*);
+
         gulong configureEventConnection;
         static bool HandleConfigureEvent(GtkWidget*, GdkEventConfigure*, BrowserWindow*);
         struct Rect {
             gint x, y, width, height;
         };
         std::optional<Rect> lastRect;
+        bool fullScreen = false;
     };
 }
 

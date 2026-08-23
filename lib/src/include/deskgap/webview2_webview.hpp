@@ -17,8 +17,8 @@ namespace DeskGap {
         Impl* webview2Impl_;
     public:
         static std::string GetAvailableCoreVersion();
-        Webview2Webview(EventCallbacks&&, const std::string& preloadScriptString);
-        virtual void LoadLocalFile(const std::string& path) override;
+        Webview2Webview(EventCallbacks&&, const std::string& preloadScriptString, SessionOptions&&);
+        virtual void LoadLocalFile(const std::string& path, const std::string& fragment, const std::string& applicationHost) override;
         virtual void LoadRequest(
             const std::string& method,
             const std::string& urlString,
@@ -26,6 +26,14 @@ namespace DeskGap {
             const std::optional<std::string>& body
         ) override;
         virtual void Reload() override;
+        virtual void ResolveNavigationPolicy(uint64_t requestId, bool allow) override;
+        virtual void ResolveCustomProtocolRequest(
+            uint64_t requestId,
+            int statusCode,
+            const std::string& statusText,
+            const std::vector<HTTPHeader>& headers,
+            std::vector<uint8_t>&& body
+        ) override;
         virtual void SetDevToolsEnabled(bool enabled) override;
         virtual void ExecuteJavaScript(const std::string& scriptString, std::optional<JavaScriptExecutionCallback>&&) override;
         virtual ~Webview2Webview();

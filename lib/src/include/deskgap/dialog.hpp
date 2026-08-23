@@ -54,6 +54,31 @@ namespace DeskGap {
             std::optional<std::string> filePath;
         };
 
+        enum class MessageBoxType: int {
+            NONE = 0,
+            INFO = 1,
+            ERROR = 2,
+            QUESTION = 3,
+            WARNING = 4
+        };
+
+        struct MessageBoxOptions {
+            MessageBoxType type;
+            std::vector<std::string> buttons;
+            int defaultId;
+            int cancelId;
+            std::optional<std::string> title;
+            std::string message;
+            std::optional<std::string> detail;
+            std::optional<std::string> checkboxLabel;
+            bool checkboxChecked;
+        };
+
+        struct MessageBoxResult {
+            int response;
+            bool checkboxChecked = false;
+        };
+
         struct Impl;
 
         template<class Result>
@@ -68,6 +93,11 @@ namespace DeskGap {
             std::optional<std::reference_wrapper<BrowserWindow>> browserWindow,
             const SaveDialogOptions& options,
             Callback<SaveDialogResult>&& callback
+        );
+        static void ShowMessageBox(
+            std::optional<std::reference_wrapper<BrowserWindow>> browserWindow,
+            const MessageBoxOptions& options,
+            Callback<MessageBoxResult>&& callback
         );
     };
 }

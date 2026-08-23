@@ -9,7 +9,8 @@ if [[ "$OSTYPE" == "linux-gnu" ]] || [[ "$OSTYPE" == "darwin"* ]]; then
   cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -S "$deskGapNodeDir" -B dist_build
   cmake --build dist_build
 else
-  cmake -G "Visual Studio 16 2019" -A Win32 -S "$deskGapNodeDir" -B dist_build
+  unset ALL_PROXY HTTP_PROXY HTTPS_PROXY NO_PROXY
+  cmake -G "Visual Studio 17 2022" -A x64 -S "$deskGapNodeDir" -B dist_build
   cmake --build dist_build --config Release
 fi
 
@@ -29,4 +30,30 @@ else
   cp Release/DeskGap/deskgap_winrt.dll dist/DeskGap
   cp Release/DeskGap/DeskGap.exe dist/DeskGap
   cp -r Release/DeskGap/resources dist/DeskGap
+fi
+
+version="$(tr -d '\r\n' < "$deskGapNodeDir/VERSION")"
+if [[ "$OSTYPE" == "linux-gnu" ]] || [[ "$OSTYPE" == "darwin"* ]]; then
+  platform="$(node -p "process.platform + '-' + process.arch")"
+else
+  platform="win32-x64"
+fi
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  appDirectory="dist/DeskGap.app/Contents/Resources/app"
+else
+  appDirectory="dist/DeskGap/resources/app"
+fi
+node "$scriptDir/package-application.mjs" "$appDirectory" "dist/app-${version}-${platform}.tar.zst" "$version"
+
+if [[ "$OSTYPE" != "linux-gnu" ]] && [[ "$OSTYPE" != "darwin"* ]]; then
+  rm -rf "dist/DeskGapClickRuntime"
+  cp -r "dist/DeskGap" "dist/DeskGapClickRuntime"
+  rm -rf "dist/DeskGapClickRuntime/resources/app"
+  node "$scriptDir/package-click-to-run.mjs" \
+    "Release/DeskGapBootstrap.exe" \
+    "dist/DeskGapClickRuntime" \
+    "$appDirectory" \
+    "dist/DeskGap-${version}-${platform}.exe" \
+    "$version"
+  rm -rf "dist/DeskGapClickRuntime"
 fi

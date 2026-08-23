@@ -146,4 +146,55 @@ namespace DeskGap {
         gtk_widget_destroy(GTK_WIDGET(dialog));
         callback(std::move(result));
     }
+
+    void Dialog::ShowMessageBox(
+        std::optional<std::reference_wrapper<BrowserWindow>> browserWindow,
+        const MessageBoxOptions& options,
+        Callback<MessageBoxResult>&& callback
+    ) {
+        GtkMessageType messageType = GTK_MESSAGE_OTHER;
+        switch (options.type) {
+        case MessageBoxType::INFO: messageType = GTK_MESSAGE_INFO; break;
+        case MessageBoxType::ERROR: messageType = GTK_MESSAGE_ERROR; break;
+        case MessageBoxType::QUESTION: messageType = GTK_MESSAGE_QUESTION; break;
+        case MessageBoxType::WARNING: messageType = GTK_MESSAGE_WARNING; break;
+        case MessageBoxType::NONE: break;
+        }
+
+        GtkWidget* dialog = gtk_message_dialog_new(
+            browserWindow.has_value() ? browserWindow->get().impl_->gtkWindow : nullptr,
+            GTK_DIALOG_MODAL,
+            messageType,
+            GTK_BUTTONS_NONE,
+            "%s",
+            options.message.c_str()
+        );
+        if (options.title.has_value()) {
+            gtk_window_set_title(GTK_WINDOW(dialog), options.title->c_str());
+        }
+        if (options.detail.has_value()) {
+            gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "%s", options.detail->c_str());
+        }
+        for (size_t index = 0; index < options.buttons.size(); ++index) {
+            gtk_dialog_add_button(GTK_DIALOG(dialog), options.buttons[index].c_str(), static_cast<int>(index));
+        }
+        gtk_dialog_set_default_response(GTK_DIALOG(dialog), options.defaultId);
+
+        GtkWidget* checkbox = nullptr;
+        if (options.checkboxLabel.has_value()) {
+            checkbox = gtk_check_button_new_with_label(options.checkboxLabel->c_str());
+            gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(checkbox), options.checkboxChecked);
+            GtkWidget* messageArea = gtk_message_dialog_get_message_area(GTK_MESSAGE_DIALOG(dialog));
+            gtk_box_pack_start(GTK_BOX(messageArea), checkbox, FALSE, FALSE, 0);
+            gtk_widget_show(checkbox);
+        }
+
+        int response = gtk_dialog_run(GTK_DIALOG(dialog));
+
+        MessageBoxResult result;
+        result.response = response >= 0 ? response : options.cancelId;
+        result.checkboxChecked = checkbox != nullptr && gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(checkbox));
+        gtk_widget_destroy(dialog);
+        callback(std::move(result));
+    }
 }

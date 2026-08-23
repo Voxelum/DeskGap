@@ -1,8 +1,9 @@
 # API Reference
 
-!!! info "Work in Progress"
-    For now most of the APIs listed below are linked to the Electron documentation pages respectfully.   
-    Please be aware that they work similarly, but probably not exactly the same.
+::: info Work in Progress
+For now most of the APIs listed below are linked to the Electron documentation pages respectfully.
+Please be aware that they work similarly, but probably not exactly the same.
+:::
 
 ## [app](https://electronjs.org/docs/api/app)
 
@@ -40,6 +41,10 @@ Supported `options` fields:
 * `frame`
 * `title`
 * `show`
+* `autoHideMenuBar` (Windows and Linux)
+* `backgroundMaterial` (Windows): framed windows support `auto`, `none`,
+  `mica`, `acrylic`, and `tabbed`; frameless windows support `none` and
+  composition-backed `acrylic`
 * `vibrancy`
 * `menu`
 * `titleBarStyle` (supported values: `default`, `hidden`, `hiddenInset`)
@@ -72,6 +77,12 @@ Supported `options` fields:
 * [`getPosition()`](https://electronjs.org/docs/api/browser-window#wingetposition)
 * [`setTitle(title)`](https://electronjs.org/docs/api/browser-window#winsettitletitle)
 * [`getTitle()`](https://electronjs.org/docs/api/browser-window#wingettitle)
+* [`setAutoHideMenuBar(hide)`](https://electronjs.org/docs/api/browser-window#winsetautohidemenubarhide) (Windows and Linux)
+* [`isMenuBarAutoHide()`](https://electronjs.org/docs/api/browser-window#winismenubarautohide) (Windows and Linux)
+* [`setMenuBarVisibility(visible)`](https://electronjs.org/docs/api/browser-window#winsetmenubarvisibilityvisible) (Windows and Linux)
+* [`isMenuBarVisible()`](https://electronjs.org/docs/api/browser-window#winismenubarvisible) (Windows and Linux)
+* `setBackgroundMaterial(material)` (Windows; follows the same framed/frameless
+	restrictions as the constructor option)
 * [`loadFile(filePath)`](https://electronjs.org/docs/api/browser-window#winloadfilefilepath-options) (not supporting the `options` parameter)
 * [`loadURL(url)`](https://electronjs.org/docs/api/browser-window#winloadurlurl-options) (not supporting the `options` parameter)
 
@@ -101,6 +112,74 @@ Supported `options` fields:
 ### Instance Properties
 
 * [`id`](https://electronjs.org/docs/api/web-contents#contentsid)
+
+### Frameless Window Regions
+
+Use `data-deskgap-drag` for draggable custom title-bar regions and
+`data-deskgap-no-drag` for interactive controls inside them. On WebView2,
+frameless resize handles can declare one of eight native sizing directions:
+
+```html
+<div data-deskgap-resize="left"></div>
+<div data-deskgap-resize="top-right"></div>
+```
+
+Supported values are `top`, `bottom`, `left`, `right`, `top-left`,
+`top-right`, `bottom-left`, and `bottom-right`. The application controls each
+handle's position, thickness, and resize cursor with CSS.
+
+WebView2 custom title-bar buttons can bypass renderer/main-process round trips
+and execute after pointer input completes:
+
+```html
+<button data-deskgap-window-control="minimize">Minimize</button>
+<button data-deskgap-window-control="toggle-maximize">Maximize</button>
+<button data-deskgap-window-control="close">Close</button>
+```
+
+These dedicated attributes are intended only for native frameless chrome.
+
+## `Session`
+
+Every WebView owns a Session. Use `session.defaultSession`,
+`session.fromName(name)`, `session.fromPartition(partition)`, or
+`session.createEphemeral()` to create or share one.
+
+### Custom Protocols
+
+Register custom application schemes before attaching the Session to a WebView:
+
+```js
+const browserSession = session.createEphemeral()
+
+browserSession.protocol.handle('launcher-assets', async (request, context) => {
+	return new Response(await readAsset(new URL(request.url)), {
+		headers: { 'Content-Type': 'application/octet-stream' },
+	})
+})
+```
+
+Pages can then use the scheme with ordinary browser APIs and resource elements:
+
+```js
+const response = await fetch('launcher-assets://app/config.json')
+```
+
+`handle(scheme, handler)` returns a disposer. The protocol object
+also provides `unhandle(scheme)` and `isProtocolHandled(scheme)`. Registrations
+are Session-scoped and become immutable when the first WebView attaches.
+Handlers receive a standard `Request` plus `{ session, signal }` and must return
+a `Response`.
+
+The portable contract uses authority-style URLs (`scheme://host/path`) and
+supports `GET` and `HEAD`; other methods return 405. Responses are buffered up
+to 64 MiB before crossing the native boundary. Built-in and DeskGap-reserved
+schemes cannot be replaced. Cross-origin callers still require appropriate
+CORS response headers. Custom schemes are not promised to be secure contexts.
+WebView2, WKWebView, and WebKitGTK support custom protocols; WinRT rejects
+Sessions that register them. Handler cancellation is delivered when the engine
+reports a stopped request or when its WebView is destroyed; individual resource
+abort notification is not available on every engine.
 
 ## `webViews` (alias: [`webContents`](https://electronjs.org/docs/api/web-contents))
 
@@ -136,6 +215,42 @@ Supported `options` fields:
 ### Methods
 
 * [`shell.openExternal(url)`](https://electronjs.org/docs/api/shell#shellopenexternalurl-options-callback) (not supporting `options` and `callback`)
+* `shell.writeShortcutLink(path, operation, details)` creates, updates, or
+	replaces a Windows `.lnk` file.
+* `shell.createDesktopShortcut(name, details)` creates or replaces a `.lnk`
+	under the current user's Desktop directory.
+* `shell.createStartMenuShortcut(name, details)` creates or replaces a `.lnk`
+	under the current user's Start Menu Programs directory.
+
+The high-level shortcut helpers are Windows-only and return `false` elsewhere.
+The shortcut name must be a single file name; `.lnk` is appended when omitted.
+`details.target` defaults to the current DeskGap executable and `details.cwd`
+defaults to the target's directory. Supported details include `args`,
+`description`, `icon`, `iconIndex`, `appUserModelId`, and
+`toastActivatorClsid`.
+
+## `externalWindow`
+
+Native management of a visible top-level window owned by another process. This
+replaces application-specific Koffi/FFI bindings with one bounded capability.
+
+### Methods
+
+* `isSupported()` returns `true` on Windows and macOS, and on Linux X11
+	sessions. Wayland sessions return `false`.
+* `moveAndResize(processId, bounds, options)` waits for a visible top-level
+	window owned by `processId`, then moves and resizes it. `bounds` contains
+	`x`, `y`, `width`, and `height`. `options.timeout` defaults to 15 seconds and
+	accepts at most 300 seconds; `options.signal` cancels the wait. Call this
+	method only after `app.whenReady()` resolves.
+
+Windows bounds default to DeskGap display-independent coordinates and are
+converted using the target monitor's effective DPI. Set
+`options.coordinateSpace` to `screen` for physical pixels. macOS uses the
+Accessibility API and may reject until the user grants accessibility
+permission. Linux uses X11/EWMH and preserves the window's fullscreen state.
+The API rejects with `ERR_EXTERNAL_WINDOW_NOT_FOUND`,
+`ERR_EXTERNAL_WINDOW_UNSUPPORTED`, or a native movement error code.
 
 ## [`systemPreferences`](https://electronjs.org/docs/api/system-preferences)
 
@@ -146,3 +261,34 @@ Supported `options` fields:
 ### Events
 
 * `dark-mode-toggled` (available on macOS and Windows): will be emitted when the user turns on or turns off the system‘s dark mode. 
+
+## `windowsAppInstaller`
+
+Optional main-process integration with Windows App Installer. The API is
+available on Windows 10 version 1809 and later. It does not load a separate
+native addon and remains safe to import on every platform.
+
+### Methods
+
+* `isSupported()` returns whether the operating system supports the complete
+	API surface.
+* `getPackageIdentity()` resolves package `name`, `familyName`, `fullName`,
+	`publisherId`, `version`, and the associated `appInstallerUri`. It returns
+	`null` for an unpackaged process. `appInstallerUri` is `null` when the
+	package was not installed through an App Installer file.
+* `checkForUpdates()` resolves to `unknown`, `no-updates`, `available`,
+	`required`, or `error`. It rejects when the current process has no package
+	identity.
+* `install(uri, options)` installs or updates from an HTTPS or local `file:`
+	App Installer URI. `options.signal` cancels the Windows deployment operation;
+	`options.onProgress` receives an object with `state` (`queued` or
+	`processing`) and numeric `percent` fields.
+	The optional `installAllResources`, `forceTargetApplicationShutdown`,
+	`requiredContentGroupOnly`, and `limitToExistingPackages` flags map directly
+	to Windows deployment options.
+
+Native failures reject with an Error whose `code` is an HRESULT string such as
+`HRESULT_0x80073D54` and whose numeric `hresult` field preserves the signed
+Windows error value. Installation still enforces package signatures,
+certificates, publisher identity, dependencies, and system policy through the
+Windows deployment service.

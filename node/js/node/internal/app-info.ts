@@ -1,18 +1,17 @@
 import path = require('path');
 import appPath from './app-path';
+import { embeddedAppIdentity } from './app-identity';
 
 const info = {
-    name: 'DeskGap',
-    version: null as string | null
+    id: embeddedAppIdentity.id,
+    name: embeddedAppIdentity.name,
+    version: embeddedAppIdentity.version,
 }
 
 const packageJSONPath = path.join(appPath, 'package.json');
 try {
     const packageJSON = require(packageJSONPath);
-    Object.assign(info, {
-        name: packageJSON.productName || packageJSON.name,
-        version: packageJSON.version
-    });
+    if (typeof packageJSON.version === 'string') info.version = packageJSON.version;
 }
 catch (e) { }
 

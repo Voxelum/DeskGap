@@ -221,4 +221,55 @@ namespace DeskGap {
 
         Impl::PresentDialog(browserWindow, savePanel, callbackBlock);        
     }
+
+    void Dialog::ShowMessageBox(
+        std::optional<std::reference_wrapper<BrowserWindow>> browserWindow,
+        const MessageBoxOptions& options,
+        Callback<MessageBoxResult>&& callback
+    ) {
+        NSAlert* alert = [NSAlert new];
+        [alert setMessageText: NSStr(options.message)];
+        if (options.detail.has_value()) {
+            [alert setInformativeText: NSStr(*options.detail)];
+        }
+        if (options.title.has_value()) {
+            [[alert window] setTitle: NSStr(*options.title)];
+        }
+        switch (options.type) {
+        case MessageBoxType::ERROR: [alert setAlertStyle: NSAlertStyleCritical]; break;
+        case MessageBoxType::WARNING: [alert setAlertStyle: NSAlertStyleWarning]; break;
+        default: [alert setAlertStyle: NSAlertStyleInformational]; break;
+        }
+        for (const std::string& button: options.buttons) {
+            [alert addButtonWithTitle: NSStr(button)];
+        }
+        const bool hasCheckbox = options.checkboxLabel.has_value();
+        if (hasCheckbox) {
+            [alert setShowsSuppressionButton: YES];
+            [alert.suppressionButton setTitle: NSStr(*options.checkboxLabel)];
+            [alert.suppressionButton setState: options.checkboxChecked ? NSControlStateValueOn : NSControlStateValueOff];
+        }
+
+        int cancelId = options.cancelId;
+        auto sharedCallback = std::make_shared<Callback<MessageBoxResult>>(std::move(callback));
+        void (^completionHandler)(NSModalResponse) = ^(NSModalResponse returnCode) {
+            MessageBoxResult result;
+            if (returnCode >= NSAlertFirstButtonReturn) {
+                result.response = static_cast<int>(returnCode - NSAlertFirstButtonReturn);
+            }
+            else {
+                result.response = cancelId;
+            }
+            result.checkboxChecked = hasCheckbox
+                && alert.suppressionButton.state == NSControlStateValueOn;
+            (*sharedCallback)(std::move(result));
+        };
+
+        if (browserWindow.has_value()) {
+            [alert beginSheetModalForWindow: browserWindow->get().impl_->nsWindow completionHandler: completionHandler];
+        }
+        else {
+            completionHandler([alert runModal]);
+        }
+    }
 }

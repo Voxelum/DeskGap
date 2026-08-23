@@ -1,6 +1,6 @@
 target_compile_options(deskgap_platform PUBLIC "-fobjc-arc")
 
-target_link_libraries(deskgap_platform PUBLIC "-framework AppKit" "-framework WebKit")
+target_link_libraries(deskgap_platform PUBLIC "-framework AppKit" "-framework ApplicationServices" "-framework AVFoundation" "-framework IOKit" "-framework Security" "-framework UserNotifications" "-framework WebKit")
 
 add_library(deskgap_platform_preload_script STATIC ${CMAKE_CURRENT_BINARY_DIR}/dg_preload_mac.c)
 
@@ -19,9 +19,17 @@ target_sources(deskgap_platform PRIVATE
     BrowserWindow_impl.h
     dialog.mm
     menu.mm
+    native_image.mm
     menu_impl.h
     shell.mm
+    screen.mm
+    clipboard.mm
+    power_monitor.mm
+    notification.mm
+    credentials.mm
+    external_window.mm
     system_preferences.mm
+    tray.mm
     dispatch.mm
     exception.mm
     webview.mm

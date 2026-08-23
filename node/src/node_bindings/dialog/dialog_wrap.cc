@@ -10,6 +10,7 @@ namespace DeskGap::JSNativeConvertion {
     using CommonFileDialogOptions = DeskGap::Dialog::CommonFileDialogOptions;
     using OpenDialogOptions = DeskGap::Dialog::OpenDialogOptions;
     using SaveDialogOptions = DeskGap::Dialog::SaveDialogOptions;
+    using MessageBoxOptions = DeskGap::Dialog::MessageBoxOptions;
     using FileFilter = CommonFileDialogOptions::FileFilter;
 
     template<>
@@ -63,6 +64,25 @@ namespace DeskGap::JSNativeConvertion {
             ToNative(options.nameFieldLabel, jsOptions.Get("nameFieldLabel"));
             ToNative(options.showsTagField, jsOptions.Get("showsTagField"));
 
+            return options;
+        }
+    };
+
+    template<>
+    struct Native<MessageBoxOptions> {
+        inline static MessageBoxOptions From(const Napi::Value& jsValue) {
+            Napi::Object jsOptions = jsValue.As<Napi::Object>();
+
+            MessageBoxOptions options;
+            options.type = static_cast<Dialog::MessageBoxType>(jsOptions.Get("type").As<Napi::Number>().Int32Value());
+            ToNative(options.buttons, jsOptions.Get("buttons"));
+            ToNative(options.defaultId, jsOptions.Get("defaultId"));
+            ToNative(options.cancelId, jsOptions.Get("cancelId"));
+            ToNative(options.title, jsOptions.Get("title"));
+            ToNative(options.message, jsOptions.Get("message"));
+            ToNative(options.detail, jsOptions.Get("detail"));
+            ToNative(options.checkboxLabel, jsOptions.Get("checkboxLabel"));
+            ToNative(options.checkboxChecked, jsOptions.Get("checkboxChecked"));
             return options;
         }
     };
@@ -121,6 +141,27 @@ Napi::Object DeskGap::DialogObject(const Napi::Env& env) {
             });
         });
 
+    }));
+
+    dialogObject.Set("showMessageBox", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+        auto browserWindow = OptionalUnderlying<BrowserWindowWrap>(info[0]);
+        auto options = Native<Dialog::MessageBoxOptions>::From(info[1]);
+        auto callback = JSFunctionForUI::Persist(info[2].As<Napi::Function>());
+
+        UIASync(info.Env(), [
+            browserWindow = std::move(browserWindow),
+            callback = std::move(callback),
+            options = std::move(options)
+        ]() {
+            Dialog::ShowMessageBox(browserWindow, options, [callback = std::move(callback)](Dialog::MessageBoxResult&& result) {
+                callback->Call([result = std::move(result), callback](auto env) {
+                    return std::vector<napi_value> {
+                        JSFrom(env, result.response),
+                        JSFrom(env, result.checkboxChecked)
+                    };
+                });
+            });
+        });
     }));
 
     return dialogObject;

@@ -1,0 +1,252 @@
+name: CI
+
+on:
+  push:
+    branches: [master, webview2]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Create a GitHub release and publish the npm package
+        required: true
+        type: boolean
+        default: false
+      npm_tag:
+        description: npm distribution tag
+        required: true
+        type: string
+        default: latest
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x64
+          - os: windows-2025
+            platform: win32-x64
+          - os: macos-15-intel
+            platform: darwin-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libsecret-1-dev xvfb
+      - run: npm ci
+      - run: npm run tsd -- --pretty false
+      - run: npm run test:unit
+      - name: Build
+        shell: bash
+        run: bash node/scripts/build.sh
+      - name: Test DeskGap
+        if: runner.os != 'Linux'
+        run: node node/test/start.js "${{ github.workspace }}/dist_build/dist"
+      - name: Test DeskGap on Xvfb
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum node node/test/start.js "${{ github.workspace }}/dist_build/dist"
+      - name: Test behavior fixtures
+        if: runner.os != 'Linux'
+        run: >-
+          node node/test/run-fixtures.js "${{ github.workspace }}/dist_build/dist"
+          invoke-behavior protocol-behavior channel-behavior menu-bar-behavior updater-behavior
+      - name: Test behavior fixtures on Xvfb
+        if: runner.os == 'Linux'
+        run: >-
+          xvfb-run --auto-servernum node node/test/run-fixtures.js "${{ github.workspace }}/dist_build/dist"
+          invoke-behavior protocol-behavior channel-behavior menu-bar-behavior updater-behavior
+      - name: Test WebView2 behavior fixtures
+        if: runner.os == 'Windows'
+        run: >-
+          node node/test/run-fixtures.js "${{ github.workspace }}/dist_build/dist"
+          navigation-lifecycle webcontents-policy session-behavior
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}
+          path: dist_build/dist
+          if-no-files-found: error
+
+  package:
+    name: Prepare npm package
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-x64'
+          path: dists
+      - run: bash node/scripts/prepare-npm.sh dists
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: npm.tgz
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries
+          path: dist_zips
+          if-no-files-found: error
+
+  test-package:
+    name: Test npm package (${{ matrix.platform }})
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x64
+          - os: windows-2025
+            platform: win32-x64
+          - os: macos-15-intel
+            platform: darwin-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install Linux runtime
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-0 libsecret-1-0 xvfb
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-package
+          path: artifacts
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-binaries
+          path: dist_zips
+      - name: Test npm package
+        if: runner.os != 'Linux'
+        shell: bash
+        env:
+          DESKGAP_DIST_FOLDER: ${{ github.workspace }}/dist_zips
+          DESKGAP_NPM_TEST_INSTALL_WHAT: ${{ github.workspace }}/artifacts/npm.tgz
+          DESKGAP_NPM_TEST_VERSION_FILE: ${{ github.workspace }}/node/VERSION
+        run: bash node/scripts/test-npm.sh
+      - name: Test npm package on Xvfb
+        if: runner.os == 'Linux'
+        env:
+          DESKGAP_DIST_FOLDER: ${{ github.workspace }}/dist_zips
+          DESKGAP_NPM_TEST_INSTALL_WHAT: ${{ github.workspace }}/artifacts/npm.tgz
+          DESKGAP_NPM_TEST_VERSION_FILE: ${{ github.workspace }}/node/VERSION
+        run: xvfb-run --auto-servernum bash node/scripts/test-npm.sh
+
+  publish:
+    name: Publish release
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    needs: test-package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-package
+          path: artifacts
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-binaries
+          path: dist_zips
+      - name: Publish npm package
+        env:
+          DESKGAP_AP_NPM_TAG: ${{ inputs.npm_tag }}
+          DESKGAP_NPM_TARBALL: ${{ github.workspace }}/artifacts/npm.tgz
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: bash node/scripts/publish-release.sh
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(<node/VERSION)
+          prerelease_flag=()
+          if [[ "${{ inputs.npm_tag }}" != "latest" ]]; then prerelease_flag=(--prerelease); fi
+          if gh release view "v${version}" >/dev/null 2>&1; then
+            gh release upload "v${version}" dist_zips/* artifacts/npm.tgz --clobber
+          else
+            gh release create "v${version}" dist_zips/* artifacts/npm.tgz \
+              --target "${GITHUB_SHA}" \
+              --title "v${version}" \
+              --notes-file node/WHATS_NEW.md \
+              "${prerelease_flag[@]}"
+          fi
+
+  verify-published:
+    name: Verify published package (${{ matrix.platform }})
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    needs: publish
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x64
+          - os: windows-2025
+            platform: win32-x64
+          - os: macos-15-intel
+            platform: darwin-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install Linux runtime
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-0 libsecret-1-0 xvfb
+      - name: Verify published npm package
+        if: runner.os != 'Linux'
+        shell: bash
+        env:
+          DESKGAP_NPM_TEST_INSTALL_WHAT: deskgap@${{ inputs.npm_tag }}
+          DESKGAP_NPM_TEST_VERSION_FILE: ${{ github.workspace }}/node/VERSION
+        run: |
+          version=$(<node/VERSION)
+          for attempt in {1..12}; do
+            published=$(npm view "deskgap@${{ inputs.npm_tag }}" version 2>/dev/null || true)
+            if [[ "$published" == "$version" ]]; then break; fi
+            if [[ "$attempt" == 12 ]]; then echo "npm tag did not resolve to $version"; exit 1; fi
+            sleep 10
+          done
+          bash node/scripts/test-npm.sh
+      - name: Verify published npm package on Xvfb
+        if: runner.os == 'Linux'
+        env:
+          DESKGAP_NPM_TEST_INSTALL_WHAT: deskgap@${{ inputs.npm_tag }}
+          DESKGAP_NPM_TEST_VERSION_FILE: ${{ github.workspace }}/node/VERSION
+        run: |
+          version=$(<node/VERSION)
+          for attempt in {1..12}; do
+            published=$(npm view "deskgap@${{ inputs.npm_tag }}" version 2>/dev/null || true)
+            if [[ "$published" == "$version" ]]; then break; fi
+            if [[ "$attempt" == 12 ]]; then echo "npm tag did not resolve to $version"; exit 1; fi
+            sleep 10
+          done
+          xvfb-run --auto-servernum bash node/scripts/test-npm.sh

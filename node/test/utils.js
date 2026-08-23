@@ -80,10 +80,11 @@ exports.createLocalServer = (handlers) => {
     });
 }
 
-const engines = webViews.isEngineAvailable('winrt') ? ['trident', 'winrt']: [ null ];
+const availableWindowsEngines = ['webview2', 'winrt'].filter(engine => webViews.isEngineAvailable(engine));
+const engines = process.platform === 'win32' ? availableWindowsEngines : [null];
 exports.withWebView = (it, description, func, loadsBlankPage = false) => {
     for (const engine of engines) {
-        it(description + (engine == null ? "": `@${engine}`), async function() {
+        it(description + (engine == null ? "": `@${engine}`), async (testContext) => {
             const win = new BrowserWindow({
                 show: false,
                 webPreferences: { engine }
@@ -93,7 +94,7 @@ exports.withWebView = (it, description, func, loadsBlankPage = false) => {
                 await once(win.webView, 'did-finish-load');
             }
             try {
-                return await func.call(this, win);
+                return await func(win, testContext);
             }
             finally {
                 win.destroy();

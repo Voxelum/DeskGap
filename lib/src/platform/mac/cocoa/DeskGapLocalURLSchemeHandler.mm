@@ -31,7 +31,16 @@ namespace {
         return;
     }
     
-    NSString* filePath = [path_ stringByAppendingPathComponent: urlSchemeTask.request.URL.path];
+    NSString* relativePath = urlSchemeTask.request.URL.path;
+    while ([relativePath hasPrefix:@"/"]) relativePath = [relativePath substringFromIndex:1];
+    NSString* rootPath = [[path_ stringByStandardizingPath] stringByResolvingSymlinksInPath];
+    NSString* filePath = [[[rootPath stringByAppendingPathComponent:relativePath] stringByStandardizingPath]
+        stringByResolvingSymlinksInPath];
+    NSString* rootPrefix = [rootPath stringByAppendingString:@"/"];
+    if (![filePath isEqualToString:rootPath] && ![filePath hasPrefix:rootPrefix]) {
+        respond404(urlSchemeTask);
+        return;
+    }
     NSData* fileContent = [NSData dataWithContentsOfFile:filePath];
     if (!fileContent) {
         return respond404(urlSchemeTask);

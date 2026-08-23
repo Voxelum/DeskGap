@@ -2,6 +2,8 @@
 #define DESKGAP_TRAY_HPP
 
 #include "menu.hpp"
+#include "native_image.hpp"
+#include <array>
 #include <functional>
 #include <optional>
 #include <string>
@@ -19,12 +21,12 @@ namespace DeskGap {
             std::function<void()> onRightClick;
         };
 
-        Tray(const std::string &iconPath, const EventCallbacks &&);
+        Tray(const NativeImage& image, const EventCallbacks &&);
         ~Tray();
 
         void Destroy();
         bool isDestroyed();
-        void SetIcon(const std::string &iconPath);
+        void SetImage(const NativeImage& image);
         void PopupMenu(const Menu& menu, const std::array<int, 2>* location, int positioningItem, std::function<void()>&& onClose);
         void SetTooltip(const std::string &tooltip);
         void SetTitle(const std::string &title);

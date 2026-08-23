@@ -127,6 +127,23 @@ namespace DeskGap {
             { "shift", NSEventModifierFlagShift },
             { "option", NSEventModifierFlagOption }
         };
+        static const std::unordered_map<std::string, unichar> kKeysByToken {
+            { "up", NSUpArrowFunctionKey },
+            { "down", NSDownArrowFunctionKey },
+            { "left", NSLeftArrowFunctionKey },
+            { "right", NSRightArrowFunctionKey },
+            { "space", ' ' },
+            { "enter", NSCarriageReturnCharacter },
+            { "tab", NSTabCharacter },
+            { "backspace", NSBackspaceCharacter },
+            { "delete", NSDeleteFunctionKey },
+            { "insert", NSInsertFunctionKey },
+            { "home", NSHomeFunctionKey },
+            { "end", NSEndFunctionKey },
+            { "pageup", NSPageUpFunctionKey },
+            { "pagedown", NSPageDownFunctionKey },
+            { "esc", 0x1b }
+        };
 
         NSEventModifierFlags modifierFlags = 0;
         NSString* key = @"";
@@ -134,6 +151,19 @@ namespace DeskGap {
         for (const std::string& token: tokens) {
             if (auto modifierFlagIterator = kModifierFlagsByToken.find(token); modifierFlagIterator != kModifierFlagsByToken.end()) {
                 modifierFlags |= modifierFlagIterator->second;
+            }
+            else if (auto keyIterator = kKeysByToken.find(token); keyIterator != kKeysByToken.end()) {
+                unichar keyCharacter = keyIterator->second;
+                key = [NSString stringWithCharacters: &keyCharacter length: 1];
+            }
+            else if (token.length() >= 2 && token.length() <= 3 && token.front() == 'f') {
+                int functionKey = 0;
+                for (auto it = token.begin() + 1; it != token.end() && *it >= '0' && *it <= '9'; ++it) {
+                    functionKey = functionKey * 10 + (*it - '0');
+                }
+                if (functionKey < 1 || functionKey > 24) continue;
+                unichar keyCharacter = NSF1FunctionKey + functionKey - 1;
+                key = [NSString stringWithCharacters: &keyCharacter length: 1];
             }
             else {
                 key = NSStr(token);

@@ -1,34 +1,24 @@
-const nugget = require('nugget');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-exports.downloadFile = (filename, target) => new Promise((resolve, reject) => {
+exports.downloadFile = async (filename, target) => {
     const distFolder = process.env.DESKGAP_DIST_FOLDER;
     if (distFolder != null) {
-        fs.copyFileSync(path.join(distFolder, filename), target);
-        return resolve();
+        await fs.promises.copyFile(path.join(distFolder, filename), target);
+        return;
     }
 
-    const opts = { target };
-    const bintrayUser = process.env.DESKGAP_BINTRAY_USER;
-    const bintrayKey = process.env.DESKGAP_BINTRAY_KEY;
-    if (bintrayUser != null && bintrayKey != null) {
-    //For testing unpublished binaries
-        opts.headers = {
-            Authorization: "Basic " + new Buffer(bintrayUser + ":" + bintrayKey).toString('base64')
-        }
+    const version = require('./package.json').version;
+    const baseUrl = process.env.DESKGAP_DIST_BASE_URL ||
+        `https://github.com/Voxelum/DeskGap/releases/download/v${version}`;
+    const response = await fetch(`${baseUrl}/${encodeURIComponent(filename)}`);
+    if (!response.ok) {
+        throw new Error(`Cannot download ${filename}: HTTP ${response.status}`);
     }
 
-    nugget("https://dl.bintray.com/patr0nus/DeskGap/" + filename, opts, (errors) => {
-        if (errors) {
-            reject(errors[0]);
-        }
-        else {
-            resolve();
-        }
-    });
-});
+    await fs.promises.writeFile(target, Buffer.from(await response.arrayBuffer()));
+};
 
 exports.sha256OfPath = (path) => {
     return new Promise((resolve, reject) => {

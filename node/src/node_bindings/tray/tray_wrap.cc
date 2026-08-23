@@ -1,6 +1,7 @@
 #include "tray_wrap.h"
 #include "../dispatch/dispatch.h"
 #include "../menu/menu_wrap.h"
+#include "../native_image/native_image_wrap.h"
 #include <deskgap/tray.hpp>
 #include <memory>
 #include <vector>
@@ -12,13 +13,17 @@ namespace DeskGap {
     }
 
     void TrayWrap::SetIcon(const Napi::CallbackInfo &info) {
-        std::string iconPath = info[0].As<Napi::String>();
-        UISyncDelayable(info.Env(), [this, iconPath] { this->tray_->SetIcon(iconPath); });
+        NativeImage image = NativeImageWrap::Unwrap(info[0].As<Napi::Object>())->image_;
+        UISyncDelayable(info.Env(), [this, image = std::move(image)] { this->tray_->SetImage(image); });
     }
 
     void TrayWrap::SetTitle(const Napi::CallbackInfo &info) {
         std::string title = info[0].As<Napi::String>();
         UISyncDelayable(info.Env(), [this, title] { this->tray_->SetTitle(title); });
+    }
+
+    void TrayWrap::Destroy(const Napi::CallbackInfo &info) {
+        UISyncDelayable(info.Env(), [this] { this->tray_.reset(); });
     }
 
     void TrayWrap::PopupMenu(const Napi::CallbackInfo &info) {
@@ -42,7 +47,7 @@ namespace DeskGap {
     }
 
     TrayWrap::TrayWrap(const Napi::CallbackInfo &info) : Napi::ObjectWrap<TrayWrap>(info) {
-        std::string iconPath = info[0].As<Napi::String>();
+        NativeImage image = NativeImageWrap::Unwrap(info[0].As<Napi::Object>())->image_;
 
         Napi::Object jsCallbacks = info[1].As<Napi::Object>();
 
@@ -56,8 +61,8 @@ namespace DeskGap {
             [jsOnRightClick = JSFunctionForUI::Persist(jsOnRightClick, true)]() { jsOnRightClick->Call(); },
         };
 
-        UISyncDelayable(info.Env(), [this, iconPath, eventCallbacks = std::move(eventCallbacks)]() {
-            this->tray_ = std::make_unique<Tray>(iconPath, std::move(eventCallbacks));
+        UISyncDelayable(info.Env(), [this, image = std::move(image), eventCallbacks = std::move(eventCallbacks)]() {
+            this->tray_ = std::make_unique<Tray>(image, std::move(eventCallbacks));
         });
     }
 
@@ -67,6 +72,7 @@ namespace DeskGap {
                                InstanceMethod("setIcon", &TrayWrap::SetIcon),
                                InstanceMethod("setTooltip", &TrayWrap::SetTooltip),
                                InstanceMethod("setTitle", &TrayWrap::SetTitle),
+                               InstanceMethod("destroy", &TrayWrap::Destroy),
                                InstanceMethod("popupMenu", &TrayWrap::PopupMenu),
                                InstanceMethod("setContextMenu", &TrayWrap::SetContextMenu),
                            });

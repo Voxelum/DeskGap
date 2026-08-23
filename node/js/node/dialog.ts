@@ -1,7 +1,7 @@
 import { BrowserWindow } from './browser-window';
 import * as path from 'path';
 import * as fs from 'fs';
-import { dialogNative, NativeFileDialogCommonOptions, NativeFileOpenDialogOptions, NativeFileSaveDialogOptions } from './internal/native';
+import { dialogNative, NativeFileDialogCommonOptions, NativeFileOpenDialogOptions, NativeFileSaveDialogOptions, NativeMessageBoxOptions } from './internal/native';
 
 export interface IFileFilter {
     name: string;
@@ -25,6 +25,43 @@ export interface FileSaveDialogOptions extends FileDialogCommonOptions {
     nameFieldLabel: string | null;
     showsTagField: boolean | null;
 }
+
+export interface OpenDialogReturnValue {
+    canceled: boolean;
+    filePaths: string[];
+}
+
+export interface SaveDialogReturnValue {
+    canceled: boolean;
+    filePath: string;
+}
+
+export type MessageBoxType = 'none' | 'info' | 'error' | 'question' | 'warning';
+
+export interface MessageBoxOptions {
+    type: MessageBoxType;
+    buttons: string[];
+    defaultId: number;
+    cancelId: number;
+    title: string | null;
+    message: string;
+    detail: string | null;
+    checkboxLabel: string | null;
+    checkboxChecked: boolean;
+}
+
+export interface MessageBoxReturnValue {
+    response: number;
+    checkboxChecked: boolean;
+}
+
+const MessageBoxTypeCode: Record<MessageBoxType, number> = {
+    none: 0,
+    info: 1,
+    error: 2,
+    question: 3,
+    warning: 4
+};
 
 const FileOpenDialogPropertyEnum = {
     openFile: 1 << 0,
@@ -86,7 +123,66 @@ export class Dialog {
         dialogNative.showErrorBox(title, content);
     }
 
-    static showOpenDialog(browserWindow: BrowserWindow, options: Partial<FileOpenDialogOptions>, callback: (filePaths: string[] | null) => void): void {
+    static showMessageBox(browserWindow: BrowserWindow, options: Partial<MessageBoxOptions> & Pick<MessageBoxOptions, 'message'>): Promise<MessageBoxReturnValue>;
+    static showMessageBox(options: Partial<MessageBoxOptions> & Pick<MessageBoxOptions, 'message'>): Promise<MessageBoxReturnValue>;
+    static showMessageBox(
+        browserWindowOrOptions: BrowserWindow | (Partial<MessageBoxOptions> & Pick<MessageBoxOptions, 'message'>),
+        maybeOptions?: Partial<MessageBoxOptions> & Pick<MessageBoxOptions, 'message'>
+    ): Promise<MessageBoxReturnValue> {
+        const browserWindow = browserWindowOrOptions instanceof BrowserWindow ? browserWindowOrOptions : null;
+        const options = (browserWindow == null ? browserWindowOrOptions : maybeOptions) as Partial<MessageBoxOptions> & Pick<MessageBoxOptions, 'message'>;
+        const buttons = options.buttons == null || options.buttons.length === 0 ? ['OK'] : options.buttons.slice();
+        const defaultId = options.defaultId != null && options.defaultId >= 0 && options.defaultId < buttons.length ? options.defaultId : 0;
+        const cancelId = options.cancelId != null && options.cancelId >= 0 && options.cancelId < buttons.length ? options.cancelId : -1;
+        const type = options.type || 'none';
+        if (!(type in MessageBoxTypeCode)) {
+            throw new TypeError(`Invalid message box type: ${type}`);
+        }
+
+        const nativeOptions: NativeMessageBoxOptions = {
+            type: MessageBoxTypeCode[type],
+            buttons,
+            defaultId,
+            cancelId,
+            title: options.title || null,
+            message: options.message,
+            detail: options.detail || null,
+            checkboxLabel: options.checkboxLabel || null,
+            checkboxChecked: options.checkboxChecked || false
+        };
+
+        return new Promise((resolve) => {
+            dialogNative.showMessageBox(browserWindow != null ? browserWindow["native_"] : null, nativeOptions, (response, checkboxChecked) => {
+                resolve({ response, checkboxChecked });
+            });
+        });
+    }
+
+    static showOpenDialog(browserWindow: BrowserWindow, options: Partial<FileOpenDialogOptions>): Promise<OpenDialogReturnValue>;
+    static showOpenDialog(options: Partial<FileOpenDialogOptions>): Promise<OpenDialogReturnValue>;
+    static showOpenDialog(browserWindow: BrowserWindow, options: Partial<FileOpenDialogOptions>, callback: (filePaths: string[] | null) => void): void;
+    static showOpenDialog(
+        browserWindowOrOptions: BrowserWindow | Partial<FileOpenDialogOptions>,
+        optionsOrCallback?: Partial<FileOpenDialogOptions> | ((filePaths: string[] | null) => void),
+        callback?: (filePaths: string[] | null) => void
+    ): void | Promise<OpenDialogReturnValue> {
+        const browserWindow = browserWindowOrOptions instanceof BrowserWindow ? browserWindowOrOptions : null;
+        const options = (browserWindow == null ? browserWindowOrOptions : optionsOrCallback) as Partial<FileOpenDialogOptions>;
+        const legacyCallback = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback;
+
+        if (legacyCallback == null) {
+            return new Promise((resolve) => {
+                Dialog.showOpenDialogNative_(browserWindow, options, (filePaths) => resolve({
+                    canceled: filePaths == null,
+                    filePaths: filePaths || []
+                }));
+            });
+        }
+
+        Dialog.showOpenDialogNative_(browserWindow, options, legacyCallback);
+    }
+
+    private static showOpenDialogNative_(browserWindow: BrowserWindow | null, options: Partial<FileOpenDialogOptions>, callback: (filePaths: string[] | null) => void): void {
         let propertyBits = 0;
         for (const property of options.properties || []) {
             if (property in FileOpenDialogPropertyEnum) {
@@ -111,14 +207,35 @@ export class Dialog {
         dialogNative.showOpenDialog(browserWindow != null ? browserWindow["native_"] : null, nativeOptions, callback);
     }
 
-    static showOpenDialogAsync(browserWindow: BrowserWindow, options: Partial<FileOpenDialogOptions>): Promise<{ filePaths: string[] | null }> {
-        return new Promise((resolve) => {
-            Dialog.showOpenDialog(browserWindow, options, (filePaths) => resolve({ filePaths }));
-        });
+    static showOpenDialogAsync(browserWindow: BrowserWindow, options: Partial<FileOpenDialogOptions>): Promise<OpenDialogReturnValue> {
+        return Dialog.showOpenDialog(browserWindow, options);
     }
 
+    static showSaveDialog(browserWindow: BrowserWindow, options: Partial<FileSaveDialogOptions>): Promise<SaveDialogReturnValue>;
+    static showSaveDialog(options: Partial<FileSaveDialogOptions>): Promise<SaveDialogReturnValue>;
+    static showSaveDialog(browserWindow: BrowserWindow, options: Partial<FileSaveDialogOptions>, callback: (filePath: string | null) => void): void;
+    static showSaveDialog(
+        browserWindowOrOptions: BrowserWindow | Partial<FileSaveDialogOptions>,
+        optionsOrCallback?: Partial<FileSaveDialogOptions> | ((filePath: string | null) => void),
+        callback?: (filePath: string | null) => void
+    ): void | Promise<SaveDialogReturnValue> {
+        const browserWindow = browserWindowOrOptions instanceof BrowserWindow ? browserWindowOrOptions : null;
+        const options = (browserWindow == null ? browserWindowOrOptions : optionsOrCallback) as Partial<FileSaveDialogOptions>;
+        const legacyCallback = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback;
 
-    static showSaveDialog(browserWindow: BrowserWindow, options: Partial<FileSaveDialogOptions>, callback: (filePath: string | null) => void): void {
+        if (legacyCallback == null) {
+            return new Promise((resolve) => {
+                Dialog.showSaveDialogNative_(browserWindow, options, (filePath) => resolve({
+                    canceled: filePath == null,
+                    filePath: filePath || ''
+                }));
+            });
+        }
+
+        Dialog.showSaveDialogNative_(browserWindow, options, legacyCallback);
+    }
+
+    private static showSaveDialogNative_(browserWindow: BrowserWindow | null, options: Partial<FileSaveDialogOptions>, callback: (filePath: string | null) => void): void {
         const commonOptions = prepareCommonOptions(options);
 
         const nativeOptions: NativeFileSaveDialogOptions = Object.assign({
@@ -129,9 +246,7 @@ export class Dialog {
         dialogNative.showSaveDialog(browserWindow != null ? browserWindow["native_"] : null, nativeOptions, callback);
     }
 
-    static showSaveDialogAsync(browserWindow: BrowserWindow, options: Partial<FileOpenDialogOptions>): Promise<{ filePath: string | null }> {
-        return new Promise((resolve) => {
-            Dialog.showSaveDialog(browserWindow, options, (filePath) => resolve({ filePath }));
-        });
+    static showSaveDialogAsync(browserWindow: BrowserWindow, options: Partial<FileSaveDialogOptions>): Promise<SaveDialogReturnValue> {
+        return Dialog.showSaveDialog(browserWindow, options);
     }
 }

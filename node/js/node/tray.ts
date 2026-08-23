@@ -1,7 +1,13 @@
 import { bulkUISync } from './internal/dispatch';
 import { EventEmitter, IEventMap } from './internal/events';
-import { TrayNative } from './internal/native';
+import { NativeImageNative, TrayNative } from './internal/native';
 import { Menu, MenuTypeCode } from './menu';
+import { resolve } from 'path';
+
+type ImageSource = string | { native_: NativeImageNative };
+
+const toNativeImage = (image: ImageSource): NativeImageNative =>
+    typeof image === 'string' ? new NativeImageNative(0, resolve(image)) : image["native_"];
 
 
 export type MenuItemType = 'normal' | 'separator' | 'submenu' | 'checkbox';
@@ -16,9 +22,9 @@ export class Tray extends EventEmitter<TrayEvents> {
 
     private menu_: Menu | undefined;
 
-    constructor(iconPath: string) {
+    constructor(image: ImageSource) {
         super();
-        this.native_ = new TrayNative(iconPath, {
+        this.native_ = new TrayNative(toNativeImage(image), {
             onClick: () => {
                 if (this.native_) {
                     this.trigger_('click')
@@ -68,10 +74,18 @@ export class Tray extends EventEmitter<TrayEvents> {
         })
     }
 
-    setIcon(iconPath: string) {
+    setToolTip(tooltip: string) {
+        this.setTooltip(tooltip);
+    }
+
+    setImage(image: ImageSource) {
         bulkUISync(() => {
-            this.native_?.setIcon(iconPath);
+            this.native_?.setIcon(toNativeImage(image));
         })
+    }
+
+    setIcon(image: ImageSource) {
+        this.setImage(image);
     }
 
     setContextMenu(menu: Menu) {
@@ -79,12 +93,13 @@ export class Tray extends EventEmitter<TrayEvents> {
     }
 
     isDestroyed() {
-        return !!this.native_;
+        return this.native_ == null;
     }
 
     destroy() {
         bulkUISync(() => {
             this.native_?.destroy();
+            this.native_ = undefined;
         })
     }
 };

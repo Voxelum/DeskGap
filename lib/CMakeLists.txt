@@ -22,5 +22,6 @@ add_subdirectory(src/platform)
 target_link_libraries(deskgap PUBLIC deskgap_platform)
 
 target_sources(deskgap PRIVATE
+    src/native_image.cpp
     src/wrappers/app_c.cc
 )

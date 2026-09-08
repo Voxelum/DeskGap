@@ -24,6 +24,7 @@ namespace DeskGap {
         bool fullScreen = false;
         bool modal = false;
         bool hasFrame = true;
+        bool titleBarHidden = false;
         bool hasShadow = true;
         bool transparent = false;
         bool systemBackdropActive = false;

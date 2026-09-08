@@ -56,6 +56,8 @@ namespace DeskGap {
             InstanceMethod("resolveNavigationPolicy", &WebViewWrap::ResolveNavigationPolicy),
             InstanceMethod("resolveCustomProtocolRequest", &WebViewWrap::ResolveCustomProtocolRequest),
             InstanceMethod("setDevToolsEnabled", &WebViewWrap::SetDevToolsEnabled),
+            InstanceMethod("trySuspend", &WebViewWrap::TrySuspend),
+            InstanceMethod("resume", &WebViewWrap::Resume),
             InstanceMethod("destroy", &WebViewWrap::Destroy),
         });
     }
@@ -65,6 +67,9 @@ namespace DeskGap {
     {
         Napi::Object jsCallbacks = info[0].As<Napi::Object>();
         WebView::SessionOptions sessionOptions = SessionOptionsFromJS(info[2].As<Napi::Object>());
+        std::optional<uint32_t> backgroundColor = info[3].IsNumber()
+            ? std::make_optional(info[3].As<Napi::Number>().Uint32Value())
+            : std::nullopt;
 
         WebView::EventCallbacks eventCallbacks {
             [jsDidFinishLoad = JSFunctionForUI::Persist(jsCallbacks.Get("didFinishLoad").As<Napi::Function>())]() {
@@ -173,7 +178,8 @@ namespace DeskGap {
         UISyncDelayable(info.Env(), [
             this,
             eventCallbacks = std::move(eventCallbacks),
-            sessionOptions = std::move(sessionOptions)
+            sessionOptions = std::move(sessionOptions),
+            backgroundColor
         #ifdef WIN32
             , engine
         #endif
@@ -181,7 +187,12 @@ namespace DeskGap {
             static std::string dgPreloadScript(BIN2CODE_DG_UI_JS_CONTENT, BIN2CODE_DG_UI_JS_SIZE);
         #ifdef WIN32
             if (engine == Engine::WEBVIEW2) {
-                this->webview_ = std::make_unique<Webview2Webview>(std::move(eventCallbacks), dgPreloadScript, std::move(sessionOptions));
+                this->webview_ = std::make_unique<Webview2Webview>(
+                    std::move(eventCallbacks),
+                    dgPreloadScript,
+                    std::move(sessionOptions),
+                    backgroundColor
+                );
             }
             else {
                 this->webview_ = std::make_unique<WinRTWebView>(std::move(eventCallbacks), dgPreloadScript, std::move(sessionOptions));
@@ -286,6 +297,23 @@ namespace DeskGap {
         bool enabled = info[0].As<Napi::Boolean>().Value();
         UISyncDelayable(info.Env(), [this, enabled]() {
             this->webview_->SetDevToolsEnabled(enabled);
+        });
+    }
+
+    void WebViewWrap::TrySuspend(const Napi::CallbackInfo& info) {
+        auto callback = JSFunctionForUI::Persist(info[0].As<Napi::Function>());
+        UISyncDelayable(info.Env(), [this, callback]() {
+            this->webview_->TrySuspend([callback](bool suspended) {
+                callback->Call([suspended](auto env) -> std::vector<napi_value> {
+                    return { Napi::Boolean::New(env, suspended) };
+                });
+            });
+        });
+    }
+
+    void WebViewWrap::Resume(const Napi::CallbackInfo& info) {
+        UISyncDelayable(info.Env(), [this]() {
+            this->webview_->Resume();
         });
     }
 

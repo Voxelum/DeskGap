@@ -76,7 +76,7 @@ namespace DeskGap {
             callbacks_.onClick();
         } else if (lp == WM_LBUTTONDBLCLK) {
             callbacks_.onDoubleClick();
-        } else if (lp == WM_RBUTTONDOWN) {
+        } else if (lp == WM_RBUTTONDOWN || lp == WM_CONTEXTMENU) {
             callbacks_.onRightClick();
         }
     }

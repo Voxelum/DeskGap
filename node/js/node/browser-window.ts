@@ -63,6 +63,7 @@ export interface IBrowserWindowConstructorOptions {
     frame: boolean,
     closable: boolean,
     transparent: boolean,
+    backgroundColor: string | null,
     useContentSize: boolean,
     hasShadow: boolean,
     vibrancies: Vibrancy[],
@@ -135,6 +136,7 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
             frame: true,
             closable: true,
             transparent: false,
+            backgroundColor: null,
             useContentSize: false,
             hasShadow: true,
             vibrancies: null,
@@ -170,7 +172,10 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
                         this.trigger_('ready-to-show');
                     }
                 }
-            }, Object.assign({ engine: null }, fullOptions.webPreferences));
+            }, Object.assign(
+                { engine: null, backgroundColor: fullOptions.backgroundColor },
+                fullOptions.webPreferences,
+            ));
 
             this.native_ = new BrowserWindowNative(this.webview_['native_'], {
                 onBlur: () => {
@@ -222,7 +227,7 @@ export class BrowserWindow extends EventEmitter<BrowserWindowEvents> {
                 this.setAutoHideMenuBar(fullOptions.autoHideMenuBar);
                 this.setIcon(fullOptions.icon);
             }
-            if (process.platform === 'darwin' && fullOptions.frame) {
+            if ((process.platform === 'darwin' || process.platform === 'win32') && fullOptions.frame) {
                 this.setTitleBarStyle(fullOptions.titleBarStyle);
             }
             if (fullOptions.trafficLightPosition != null) {

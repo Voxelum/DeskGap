@@ -197,14 +197,16 @@ namespace DeskGap {
     }
 #endif
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(WIN32)
     void BrowserWindowWrap::SetTitleBarStyle(const Napi::CallbackInfo& info) {
         auto titleBarStyle = static_cast<BrowserWindow::TitleBarStyle>(info[0].As<Napi::Number>().Int32Value());
         UISyncDelayable(info.Env(), [this, titleBarStyle] {
             this->browser_window_->SetTitleBarStyle(titleBarStyle);
         });
     }
+#endif
 
+#ifdef __APPLE__
     void BrowserWindowWrap::SetTrafficLightPosition(const Napi::CallbackInfo& info) {
         int x = info[0].As<Napi::Number>().Int32Value();
         int y = info[1].As<Napi::Number>().Int32Value();
@@ -442,8 +444,10 @@ namespace DeskGap {
             InstanceMethod("isMenuBarVisible", &BrowserWindowWrap::IsMenuBarVisible),
             InstanceMethod("setIcon", &BrowserWindowWrap::SetIcon),
         #endif
-        #ifdef __APPLE__
+        #if defined(__APPLE__) || defined(WIN32)
             InstanceMethod("setTitleBarStyle", &BrowserWindowWrap::SetTitleBarStyle),
+        #endif
+        #ifdef __APPLE__
             InstanceMethod("setTrafficLightPosition", &BrowserWindowWrap::SetTrafficLightPosition),
             InstanceMethod("setVibrancies", &BrowserWindowWrap::SetVibrancies),
         #endif

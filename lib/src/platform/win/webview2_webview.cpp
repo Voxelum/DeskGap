@@ -78,6 +78,7 @@ namespace DeskGap {
         WebView::SessionOptions session;
         std::wstring userDataFolder;
         std::wstring browserArguments;
+        std::optional<uint32_t> backgroundColor;
         std::string pathUrl = "";
         std::string requestUrl = "";
         std::string pendingNavigationUrl = "";
@@ -94,7 +95,17 @@ namespace DeskGap {
         std::unordered_map<uint64_t, PendingProtocolRequest> pendingProtocolRequests;
         std::string localFolder = "";
         std::string localHost = "";
+        bool devToolsEnabled = true;
         std::shared_ptr<std::atomic_bool> alive = std::make_shared<std::atomic_bool>(true);
+
+        void ApplyDevToolsSettings() {
+            if (!webviewWindow) return;
+            wil::com_ptr<ICoreWebView2Settings> settings;
+            check(webviewWindow->get_Settings(&settings));
+            check(settings->put_AreDevToolsEnabled(devToolsEnabled ? TRUE : FALSE));
+            check(settings->put_AreDefaultContextMenusEnabled(devToolsEnabled ? TRUE : FALSE));
+            check(settings->put_IsStatusBarEnabled(devToolsEnabled ? TRUE : FALSE));
+        }
 
         void NavigateToLocalFile() {
             if (!webviewWindow || pathUrl.empty()) return;
@@ -224,6 +235,7 @@ namespace DeskGap {
                             settings->put_IsScriptEnabled(TRUE);
                             settings->put_AreDefaultScriptDialogsEnabled(TRUE);
                             settings->put_IsWebMessageEnabled(TRUE);
+                            ApplyDevToolsSettings();
                             if (session.userAgent.has_value()) {
                                 wil::com_ptr<ICoreWebView2Settings2> settings2;
                                 if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&settings2)))) {
@@ -403,8 +415,16 @@ namespace DeskGap {
                             }
 
                             wil::com_ptr<ICoreWebView2Controller2> controller2 = webviewController.query<ICoreWebView2Controller2>();
-                            // COREWEBVIEW2_COLOR
-                            COREWEBVIEW2_COLOR color{0, 0, 0, 0};
+                            COREWEBVIEW2_COLOR color { 0, 0, 0, 0 };
+                            if (backgroundColor.has_value()) {
+                                const uint32_t value = *backgroundColor;
+                                color = {
+                                    static_cast<BYTE>((value >> 24) & 0xff),
+                                    static_cast<BYTE>((value >> 16) & 0xff),
+                                    static_cast<BYTE>((value >> 8) & 0xff),
+                                    static_cast<BYTE>(value & 0xff),
+                                };
+                            }
                             check(controller2->put_DefaultBackgroundColor(color));
                             // 4 - Navigation events
 
@@ -447,9 +467,16 @@ namespace DeskGap {
 
                                     if (message && wcscmp(message.get(), L"deskgap:window-drag") == 0) {
                                         if (HWND windowWnd = GetAncestor(containerWnd, GA_ROOT); windowWnd != nullptr) {
+                                            POINT cursor { };
+                                            GetCursorPos(&cursor);
                                             SetFocus(windowWnd);
                                             ::ReleaseCapture();
-                                            SendMessage(windowWnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+                                            SendMessageW(
+                                                windowWnd,
+                                                WM_NCLBUTTONDOWN,
+                                                HTCAPTION,
+                                                MAKELPARAM(cursor.x, cursor.y)
+                                            );
                                         }
                                         return S_OK;
                                     }
@@ -470,9 +497,12 @@ namespace DeskGap {
                                             : HTNOWHERE;
                                         if (hitTest != HTNOWHERE) {
                                             if (HWND windowWnd = GetAncestor(containerWnd, GA_ROOT); windowWnd != nullptr) {
-                                                SetFocus(windowWnd);
-                                                ::ReleaseCapture();
-                                                SendMessageW(windowWnd, WM_NCLBUTTONDOWN, hitTest, 0);
+                                                if (!IsZoomed(windowWnd)
+                                                    && (GetWindowLongW(windowWnd, GWL_STYLE) & WS_THICKFRAME) != 0) {
+                                                    SetFocus(windowWnd);
+                                                    ::ReleaseCapture();
+                                                    SendMessageW(windowWnd, WM_NCLBUTTONDOWN, hitTest, 0);
+                                                }
                                             }
                                         }
                                         return S_OK;
@@ -543,8 +573,16 @@ namespace DeskGap {
                 }).Get());
         }
 
-        Impl(WebView::EventCallbacks &callbacks, std::wstring &preload, WebView::SessionOptions&& session)
-            : callbacks(std::move(callbacks)), containerWnd(nullptr), preloadScript(std::move(preload)), session(std::move(session)) {}
+        Impl(
+            WebView::EventCallbacks &callbacks,
+            std::wstring &preload,
+            WebView::SessionOptions&& session,
+            std::optional<uint32_t> backgroundColor
+        ) : callbacks(std::move(callbacks)),
+            containerWnd(nullptr),
+            preloadScript(std::move(preload)),
+            session(std::move(session)),
+            backgroundColor(backgroundColor) {}
 
         void ExecuteJavaScript(const std::wstring &code, std::optional<JavaScriptExecutionCallback> &&cb) {
             webviewWindow->ExecuteScript(
@@ -622,16 +660,18 @@ namespace DeskGap {
                 request.deferral->Complete();
             }
             pendingProtocolRequests.clear();
+            if (webviewController) webviewController->Close();
+            webviewController.reset();
             webviewWindow.reset();
             webviewEnvironment.reset();
-            webviewController.reset();
         }
     };
 
     Webview2Webview::Webview2Webview(
         EventCallbacks &&callbacks,
         const std::string &preloadScriptString,
-        SessionOptions&& session
+        SessionOptions&& session,
+        std::optional<uint32_t> backgroundColor
     ) {
 
         std::string script;
@@ -639,7 +679,12 @@ namespace DeskGap {
         script.assign(BIN2CODE_DG_PRELOAD_WEBVIEW2_JS_CONTENT, BIN2CODE_DG_PRELOAD_WEBVIEW2_JS_SIZE);
         script.append(preloadScriptString);
 
-        auto impl = std::make_unique<Impl>(callbacks, UTF8ToWString(script.c_str()), std::move(session));
+        auto impl = std::make_unique<Impl>(
+            callbacks,
+            UTF8ToWString(script.c_str()),
+            std::move(session),
+            backgroundColor
+        );
 
         // impl_ for reference owning, and winrtImpl_ for method calling
         webview2Impl_ = impl.get();
@@ -681,10 +726,9 @@ namespace DeskGap {
     }
 
     void Webview2Webview::SetDevToolsEnabled(bool enabled) {
-        wil::com_ptr<ICoreWebView2Settings> settings;
-        check(webview2Impl_->webviewWindow->get_Settings(&settings));
-        check(settings->put_AreDevToolsEnabled(enabled ? TRUE : FALSE));
-        if (enabled) {
+        webview2Impl_->devToolsEnabled = enabled;
+        webview2Impl_->ApplyDevToolsSettings();
+        if (enabled && webview2Impl_->webviewWindow) {
             webview2Impl_->webviewWindow->OpenDevToolsWindow();
         }
     }
@@ -692,6 +736,40 @@ namespace DeskGap {
     void Webview2Webview::ExecuteJavaScript(const std::string &scriptString, std::optional<JavaScriptExecutionCallback> &&cb) {
         std::wstring wScriptString = UTF8ToWString(scriptString.c_str());
         webview2Impl_->ExecuteJavaScript(wScriptString, std::move(cb));
+    }
+
+    void Webview2Webview::TrySuspend(SuspendCallback&& callback) {
+        wil::com_ptr<ICoreWebView2_3> webview3;
+        if (!webview2Impl_->webviewWindow
+            || FAILED(webview2Impl_->webviewWindow->QueryInterface(IID_PPV_ARGS(&webview3)))) {
+            callback(false);
+            return;
+        }
+        auto completion = std::make_shared<SuspendCallback>(std::move(callback));
+        const HRESULT result = webview3->TrySuspend(
+            Callback<ICoreWebView2TrySuspendCompletedHandler>([
+                completion,
+                alive = webview2Impl_->alive
+            ](HRESULT errorCode, BOOL isSuccessful) -> HRESULT {
+                if (*completion) {
+                    auto callback = std::move(*completion);
+                    callback(alive->load() && SUCCEEDED(errorCode) && isSuccessful);
+                }
+                return S_OK;
+            }).Get()
+        );
+        if (FAILED(result) && *completion) {
+            auto failed = std::move(*completion);
+            failed(false);
+        }
+    }
+
+    void Webview2Webview::Resume() {
+        wil::com_ptr<ICoreWebView2_3> webview3;
+        if (webview2Impl_->webviewWindow
+            && SUCCEEDED(webview2Impl_->webviewWindow->QueryInterface(IID_PPV_ARGS(&webview3)))) {
+            webview3->Resume();
+        }
     }
 
     Webview2Webview::~Webview2Webview() {}

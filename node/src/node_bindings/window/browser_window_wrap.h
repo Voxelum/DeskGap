@@ -35,8 +35,11 @@ namespace DeskGap {
         void SetIcon(const Napi::CallbackInfo& info);
     #endif
 
-    #ifdef __APPLE__
+    #if defined(__APPLE__) || defined(WIN32)
         void SetTitleBarStyle(const Napi::CallbackInfo& info);
+    #endif
+
+    #ifdef __APPLE__
         void SetTrafficLightPosition(const Napi::CallbackInfo& info);
         void SetVibrancies(const Napi::CallbackInfo& info);
     #endif

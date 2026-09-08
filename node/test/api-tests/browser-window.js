@@ -17,6 +17,18 @@ describe('BrowserWindow module', () => {
     });
 
     describe('window state', () => {
+        it('accepts supported background colors', (testContext) => {
+            if (process.platform !== 'win32') return testContext.skip();
+            for (const backgroundColor of ['#121212', '#121212ff', '0x424242']) {
+                const win = new BrowserWindow({ show: false, backgroundColor });
+                win.destroy();
+            }
+            assert.throws(
+                () => new BrowserWindow({ show: false, backgroundColor: 'rgb(18, 18, 18)' }),
+                /backgroundColor/,
+            );
+        });
+
         it('controls visibility, minimized, and maximized state', () => {
             const win = new BrowserWindow({ show: false });
             try {

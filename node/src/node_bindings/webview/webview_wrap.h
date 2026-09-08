@@ -18,6 +18,8 @@ namespace DeskGap {
         void ResolveNavigationPolicy(const Napi::CallbackInfo& info);
         void ResolveCustomProtocolRequest(const Napi::CallbackInfo& info);
         void SetDevToolsEnabled(const Napi::CallbackInfo& info);
+        void TrySuspend(const Napi::CallbackInfo& info);
+        void Resume(const Napi::CallbackInfo& info);
         void Destroy(const Napi::CallbackInfo& info);
         #ifdef WIN32
         enum class Engine: uint32_t {

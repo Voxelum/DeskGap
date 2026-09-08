@@ -112,8 +112,19 @@ namespace DeskGap {
                             }
                             return 0;
                         }
+                        case WM_NCCALCSIZE: {
+                            if (wp && browserWindow->impl_->titleBarHidden) {
+                                auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lp);
+                                const LONG windowTop = params->rgrc[0].top;
+                                DefWindowProcW(hwnd, msg, wp, lp);
+                                params->rgrc[0].top = windowTop
+                                    + (IsZoomed(hwnd) ? ResizeBorderWidth(hwnd) : 0);
+                                return 0;
+                            }
+                            break;
+                        }
                         case WM_NCHITTEST: {
-                            if (!browserWindow->impl_->hasFrame
+                            if ((!browserWindow->impl_->hasFrame || browserWindow->impl_->titleBarHidden)
                                 && !IsZoomed(hwnd)
                                 && (GetWindowLongW(hwnd, GWL_STYLE) & WS_THICKFRAME) != 0) {
                                 RECT windowRect { };
@@ -154,7 +165,7 @@ namespace DeskGap {
                             break;
                         }
                         case WM_NCLBUTTONDOWN: {
-                            if (!browserWindow->impl_->hasFrame
+                            if ((!browserWindow->impl_->hasFrame || browserWindow->impl_->titleBarHidden)
                                 && !IsZoomed(hwnd)
                                 && (GetWindowLongW(hwnd, GWL_STYLE) & WS_THICKFRAME) != 0) {
                                 int sizingEdge = SizingEdgeForHitTest(wp);
@@ -167,7 +178,7 @@ namespace DeskGap {
                             break;
                         }
                         case WM_LBUTTONDOWN: {
-                            if (!browserWindow->impl_->hasFrame
+                            if ((!browserWindow->impl_->hasFrame || browserWindow->impl_->titleBarHidden)
                                 && !IsZoomed(hwnd)
                                 && (GetWindowLongW(hwnd, GWL_STYLE) & WS_THICKFRAME) != 0) {
                                 int sizingEdge = SizingEdgeForHitTest(HitTestAtCursor(hwnd));
@@ -180,7 +191,7 @@ namespace DeskGap {
                             break;
                         }
                         case WM_SETCURSOR: {
-                            if (!browserWindow->impl_->hasFrame) {
+                            if (!browserWindow->impl_->hasFrame || browserWindow->impl_->titleBarHidden) {
                                 LRESULT hitTest = HitTestAtCursor(hwnd);
                                 LPCWSTR cursorName = nullptr;
                                 switch (hitTest) {
@@ -435,6 +446,17 @@ namespace DeskGap {
             ? MARGINS { 0, 0, 1, 0 }
             : MARGINS { 0, 0, 0, 0 };
         DwmExtendFrameIntoClientArea(impl_->windowWnd, &margins);
+        SetWindowPos(
+            impl_->windowWnd, nullptr, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED
+        );
+        RECT rect { };
+        GetClientRect(impl_->windowWnd, &rect);
+        impl_->webView.impl_->SetRect(0, 0, rect.right - rect.left, rect.bottom - rect.top);
+    }
+
+    void BrowserWindow::SetTitleBarStyle(TitleBarStyle titleBarStyle) {
+        impl_->titleBarHidden = titleBarStyle != TitleBarStyle::DEFAULT;
         SetWindowPos(
             impl_->windowWnd, nullptr, 0, 0, 0, 0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED

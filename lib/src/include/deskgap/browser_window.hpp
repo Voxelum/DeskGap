@@ -95,13 +95,16 @@ namespace DeskGap {
         void SetIcon(const std::optional<std::string>& iconPath);
     #endif
 
-    #ifdef __APPLE__
+    #if defined(__APPLE__) || defined(WIN32)
         enum class TitleBarStyle: int {
             DEFAULT = 0,
             HIDDEN = 1,
             HIDDEN_INSET = 2
         };
         void SetTitleBarStyle(TitleBarStyle);
+    #endif
+
+    #ifdef __APPLE__
         void SetTrafficLightPosition(int x, int y);
 
         struct Vibrancy {

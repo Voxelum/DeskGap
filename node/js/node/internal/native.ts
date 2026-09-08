@@ -155,11 +155,14 @@ export declare class WebViewNative {
         },
         engine: number | null,
         session: NativeSessionOptions,
+        backgroundColor: number | null,
     )
 
     loadLocalFile(path: string, fragment: string, applicationHost: string): void
     loadRequest(method: string, url: string, headers: Array<[string, string]>, body?: string): void
     setDevToolsEnabled(enabled: boolean): void
+    trySuspend(callback: (suspended: boolean) => void): void
+    resume(): void
     executeJavaScript(script: string, callback: ((error: string) => void) | null): void
     reload(): void
     resolveNavigationPolicy(requestId: number, allow: boolean): void

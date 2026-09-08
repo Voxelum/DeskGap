@@ -123,6 +123,17 @@ export interface WebView {
 export interface WebPreferences {
     engine: Engine | null;
     session?: Session;
+    backgroundColor?: string | null;
+}
+
+function parseBackgroundColor(value: string | null | undefined): number | null {
+    if (value == null) return null;
+    const match = /^(?:#([0-9a-f]{6})([0-9a-f]{2})?|0x([0-9a-f]{6}))$/i.exec(value);
+    if (match == null) throw new TypeError('backgroundColor must be #RRGGBB, #RRGGBBAA, or 0xRRGGBB');
+    const color = match[1] ?? match[3];
+    const rgb = Number.parseInt(color, 16);
+    const alpha = match[2] == null ? 0xff : Number.parseInt(match[2], 16);
+    return ((alpha << 24) | rgb) >>> 0;
 }
 
 let currentId = 0;
@@ -347,7 +358,8 @@ export class WebView extends EventEmitter<WebViewEvents> {
                 this.protocolRequests_.delete(requestId);
                 controller.abort();
             },
-        }, this.engine_ == null ? null : engineCodeByName[this.engine_], sessionOptions);
+        }, this.engine_ == null ? null : engineCodeByName[this.engine_], sessionOptions,
+        parseBackgroundColor(preferences.backgroundColor));
     }
 
     handle<Args = unknown, Result = unknown>(name: string, handler: InvokeHandler<Args, Result>): () => void {
@@ -531,6 +543,15 @@ export class WebView extends EventEmitter<WebViewEvents> {
 
     closeDevTools(): void {
         this.setDevToolsEnabled(false);
+    }
+
+    trySuspend(): Promise<boolean> {
+        if (this.isDestroyed()) return Promise.resolve(false);
+        return new Promise(resolve => this.native_.trySuspend(resolve));
+    }
+
+    resume(): void {
+        if (!this.isDestroyed()) this.native_.resume();
     }
 
     isDevToolsOpened(): boolean {

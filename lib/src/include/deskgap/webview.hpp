@@ -89,6 +89,10 @@ namespace DeskGap {
         using JavaScriptExecutionCallback = std::function<void(std::optional<std::string>&&)>; // std::optional<std::string>: error message
         PURE_VIRTUAL_IF_WIN32(void ExecuteJavaScript(const std::string& scriptString, std::optional<JavaScriptExecutionCallback>&&));
 
+        using SuspendCallback = std::function<void(bool)>;
+        virtual void TrySuspend(SuspendCallback&& callback) { callback(false); }
+        virtual void Resume() { }
+
         PURE_VIRTUAL_IF_WIN32(void SetDevToolsEnabled(bool enabled));
 
         #ifdef WIN32

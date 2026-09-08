@@ -22,6 +22,14 @@ describe('BrowserWindow#webView', () => {
         win.destroy();
     });
 
+    describe('webView.trySuspend()', () => {
+        withWebView(it, 'suspends loaded hidden content', async (win) => {
+            const suspended = await win.webView.trySuspend();
+            assert.equal(suspended, win.webView.engine === 'webview2');
+            win.webView.resume();
+        }, true);
+    });
+
     describe('webView.loadURL(url)', () => {
         withWebView(it, 'loads the page by requesting the url', async (win, testContext) => {
             if (win.webView.engine === 'winrt') return testContext.skip();

@@ -16,7 +16,7 @@ function bundle(file, options = {}) {
     }).outputFiles[0].text;
 }
 
-const codecSource = bundle('common\\utf8.ts');
+const codecSource = bundle(path.join('common', 'utf8.ts'));
 const codecs = { exports: {} };
 vm.runInNewContext(codecSource, {
     module: codecs,
@@ -72,7 +72,7 @@ test('EdgeHTML EventTarget compatibility retains native dispatch and subclass me
         document: { createDocumentFragment: () => new EventTarget() },
     };
     context.window = context;
-    vm.runInNewContext(bundle('ui\\compatibility.ts', { format: 'iife' }), context);
+    vm.runInNewContext(bundle(path.join('ui', 'compatibility.ts'), { format: 'iife' }), context);
     const target = vm.runInNewContext(`
         class DeskGapTarget extends EventTarget {
             check() { return 42; }
@@ -99,6 +99,6 @@ test('EdgeHTML EventTarget compatibility retains native dispatch and subclass me
 test('modern browsers retain their native EventTarget constructor', () => {
     const context = { EventTarget };
     context.window = context;
-    vm.runInNewContext(bundle('ui\\compatibility.ts', { format: 'iife' }), context);
+    vm.runInNewContext(bundle(path.join('ui', 'compatibility.ts'), { format: 'iife' }), context);
     assert.equal(context.EventTarget, EventTarget);
 });

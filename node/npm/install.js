@@ -21,7 +21,12 @@ if (deskGapPlatform == null) {
     process.exit(1);
 }
 
-const distZipFile = require('./dist_files/' + deskGapPlatform);
+const distInfoPath = path.join(__dirname, 'dist_files', `${deskGapPlatform}.json`);
+if (!fs.existsSync(distInfoPath)) {
+    console.error(`This DeskGap package does not include a runtime for ${deskGapPlatform}.`);
+    process.exit(1);
+}
+const distZipFile = require(distInfoPath);
 const distZipFilePath = path.join(__dirname, distZipFile.filename);
 
 (async () => {

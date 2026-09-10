@@ -48,7 +48,7 @@ Node version changes.
 
 ## GitHub binary releases
 
-The CI workflow builds and exercises Windows x64, macOS x64, and Linux x64.
+The default CI workflow builds and exercises Windows x64, macOS x64, and Linux x64.
 Pull requests targeting `webview2` run the same pipeline. ARM64 binaries are not
 currently part of the release matrix.
 
@@ -57,11 +57,18 @@ release notes, manually run CI on the
 intended commit with `publish: true`. GitHub binary publishing does not require
 an npm token. Set `publish_npm: true` only when also publishing to npm; that
 separate job runs after the GitHub assets exist and requires `NPM_TOKEN`.
+Manual runs can select `platforms: windows-x64` to build, package, and publish
+only Windows; the default `all` selection and push/PR runs retain all three
+platforms. The `v0.3.0-beta3` preview uses `windows-x64`, `publish: true`,
+`publish_npm: false`, and `npm_tag: beta`. macOS/Linux assets are not included
+because their native single-instance and protocol-registration APIs are not
+yet implemented. Its `npm.tgz` is a GitHub SDK asset with a Windows runtime,
+not a new npm registry version.
 Prerelease versions remain prereleases even when the npm tag is `latest`.
 Existing GitHub release assets are not overwritten: use a new version rather
 than replacing bytes behind a published URL.
 
-Each release includes:
+Each release includes assets for its selected platforms:
 
 * `deskgap-v<version>-<platform>-x64.zip`: runtime and embedded demo application;
   the Windows archive also includes the raw bootstrap for application packaging.

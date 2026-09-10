@@ -1,5 +1,9 @@
 ## 0.3.0-beta3 webview2 preview
 
+This prerelease includes **Windows x64 only**. macOS and Linux binaries are not
+published: their native single-instance and protocol-registration APIs still
+need implementation before those platforms can pass the release pipeline.
+
 - Node.js 24 and the Windows WebView2 runtime, with platform-native desktop APIs.
 - Signed application updates using Ed25519 manifests, versioned tar.zst payloads,
   streaming progress and cancellation, and platform installer fallback.
@@ -24,8 +28,8 @@ macOS session/proxy limitations, and application-level migration gates remain
 documented in the compatibility and build guides.
 Windows Authenticode verification and click-to-run update handoff are implemented;
 a genuinely SignPath-signed XMCL executable still needs its application-level
-release acceptance. macOS and Linux runtime assets do not imply equivalent
-application installer or persistent-session/proxy support.
+release acceptance. This release does not provide macOS/Linux runtime assets
+or claim their application installer or persistent-session/proxy support.
 
 ## Legacy release notes
 

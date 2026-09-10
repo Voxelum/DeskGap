@@ -7,6 +7,14 @@ on:
     branches: [master, webview2]
   workflow_dispatch:
     inputs:
+      platforms:
+        description: Platforms to build and publish (push and PR runs always use all)
+        required: true
+        type: choice
+        options:
+          - all
+          - windows-x64
+        default: all
       publish:
         description: Create an immutable GitHub binary release
         required: true
@@ -27,18 +35,35 @@ permissions:
   contents: read
 
 jobs:
+  select-platforms:
+    name: Select build platforms
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.platforms.outputs.matrix }}
+    steps:
+      - id: platforms
+        env:
+          PLATFORMS: ${{ github.event_name == 'workflow_dispatch' && inputs.platforms || 'all' }}
+        run: |
+          case "$PLATFORMS" in
+            windows-x64)
+              echo 'matrix={"include":[{"os":"windows-2022","platform":"win32-x64"}]}' >> "$GITHUB_OUTPUT"
+              ;;
+            all)
+              echo 'matrix={"include":[{"os":"ubuntu-24.04","platform":"linux-x64"},{"os":"windows-2022","platform":"win32-x64"},{"os":"macos-15-intel","platform":"darwin-x64"}]}' >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unsupported platform selection: $PLATFORMS"
+              exit 1
+              ;;
+          esac
+
   build:
     name: Build and test (${{ matrix.platform }})
+    needs: select-platforms
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            platform: linux-x64
-          - os: windows-2022
-            platform: win32-x64
-          - os: macos-15-intel
-            platform: darwin-x64
+      matrix: ${{ fromJSON(needs.select-platforms.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -130,17 +155,10 @@ jobs:
 
   test-package:
     name: Test npm package (${{ matrix.platform }})
-    needs: package
+    needs: [package, select-platforms]
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            platform: linux-x64
-          - os: windows-2022
-            platform: win32-x64
-          - os: macos-15-intel
-            platform: darwin-x64
+      matrix: ${{ fromJSON(needs.select-platforms.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -239,17 +257,10 @@ jobs:
   verify-published:
     name: Verify published package (${{ matrix.platform }})
     if: github.event_name == 'workflow_dispatch' && inputs.publish && inputs.publish_npm
-    needs: publish-npm
+    needs: [publish-npm, select-platforms]
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            platform: linux-x64
-          - os: windows-2022
-            platform: win32-x64
-          - os: macos-15-intel
-            platform: darwin-x64
+      matrix: ${{ fromJSON(needs.select-platforms.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

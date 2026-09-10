@@ -635,7 +635,11 @@ only the public key into the application.
 ### Windows single-EXE updates
 
 XMCL adds `xmcl-deskgap-<version>-win32-x64.exe` to its ordinary release alongside
-Electron assets and signs it through SignPath. It does not publish separate
+Electron assets. The DeskGap SignPath step is currently a placeholder: previews
+are unsigned and require manual installation. Automatic updates still reject
+unsigned executables; publisher verification is not bypassed. Once EXE signing
+is enabled, the same workflow can supply trusted updates without another key.
+XMCL does not publish separate
 `deskgap-v<version>` tags, update manifests, or application-only payloads.
 A DeskGap runtime ZIP is build input, not an installable application update.
 Combine the raw bootstrap, runtime, and application with

@@ -16,8 +16,10 @@ This is a preview runtime, not a claim of complete XMCL/Electron parity.
 The v0.3.0-beta2 tag and npm version are historical releases and are not updated.
 This prerelease publishes GitHub binaries and an SDK tarball, not a new npm
 registry version.
-XMCL adds a SignPath-signed DeskGap EXE to its existing application releases;
-it does not need a separate update-signing key or release stream. Platform signing,
+XMCL adds a DeskGap EXE to its existing application releases; its SignPath EXE
+step is currently a placeholder and previews are unsigned/manual-install only.
+The updater continues to reject unsigned executables. No separate update-signing
+key or release stream is needed. Platform signing,
 macOS session/proxy limitations, and application-level migration gates remain
 documented in the compatibility and build guides.
 Windows Authenticode verification and click-to-run update handoff are implemented;

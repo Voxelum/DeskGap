@@ -18,7 +18,7 @@ process.resourcesPath = appNative.getResourcePath();
 process.argv = appNative.getArgv();
 
 Object.defineProperty(process.versions, 'deskgap', {
-    value: deskgapVersion,
+    value: deskgapVersion.trim(),
     writable: false,
     configurable: true,
     enumerable: false

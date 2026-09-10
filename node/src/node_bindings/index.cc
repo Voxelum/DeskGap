@@ -17,6 +17,7 @@
 #include "dialog/dialog_wrap.h"
 #include "native_image/native_image_wrap.h"
 #include "windows_app_installer/windows_app_installer_wrap.h"
+#include "windows_executable/windows_executable_wrap.h"
 #include "external_window/external_window_wrap.h"
 #include "dispatch/dispatch.h"
 #include "native_exception.h"
@@ -60,6 +61,7 @@ Napi::Object DeskGap::InitNodeNativeModule(Napi::Env env, Napi::Object exports) 
     exports.Set("systemPreferencesNative", DeskGap::SystemPreferencesObject(env));
     exports.Set("dialogNative", DeskGap::DialogObject(env));
     exports.Set("windowsAppInstallerNative", DeskGap::WindowsAppInstallerObject(env));
+    exports.Set("windowsExecutableNative", DeskGap::WindowsExecutableObject(env));
     exports.Set("externalWindowNative", DeskGap::ExternalWindowObject(env));
 
     return exports;

@@ -50,9 +50,14 @@ test('freezes user-agent and proxy configuration after first attachment', async 
     const value = session.createEphemeral();
     value.setUserAgent('DeskGapSessionTest/1.0');
     await value.setProxy({ proxyRules: 'http://localhost:8080', proxyBypassRules: 'localhost' });
-    const native = value.acquire('webview2');
+    const engine = process.platform === 'win32' ? 'webview2' : null;
+    if (process.platform === 'darwin') {
+        assert.throws(() => value.acquire(engine), /WKWebView does not support per-session proxy/);
+        await value.setProxy({ mode: 'system' });
+    }
+    const native = value.acquire(engine);
     assert.equal(native.userAgent, 'DeskGapSessionTest/1.0');
-    assert.equal(native.proxyRules, 'http://localhost:8080');
+    assert.equal(native.proxyRules, process.platform === 'darwin' ? null : 'http://localhost:8080');
     assert.deepEqual(native.customSchemes, []);
     assert.throws(() => value.setUserAgent('changed'), /cannot be changed/);
     await assert.rejects(value.setProxy({ mode: 'direct' }), /cannot be changed/);

@@ -11,7 +11,8 @@ add_custom_command(
         $<IF:$<CONFIG:Release>,--minify-whitespace,--sourcemap=external>
         --tsconfig=${CMAKE_CURRENT_LIST_DIR}/node/tsconfig.json
         ${CMAKE_CURRENT_LIST_DIR}/node/index.ts
-    DEPENDS ${NODE_TS_FILES} ${COMMON_TS_FILES} node/tsconfig.json ${CMAKE_CURRENT_LIST_DIR}/../VERSION
+    DEPENDS ${NODE_TS_FILES} ${COMMON_TS_FILES} node/tsconfig.json
+        ${CMAKE_CURRENT_LIST_DIR}/../VERSION ${CMAKE_CURRENT_LIST_DIR}/../VERSION.txt
 )
 bin2code(${CMAKE_CURRENT_BINARY_DIR}/dg_node.js ${CMAKE_CURRENT_BINARY_DIR}/dg_node.c)
 

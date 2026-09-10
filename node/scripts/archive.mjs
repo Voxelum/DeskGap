@@ -6,6 +6,17 @@ import { Transform } from 'node:stream';
 import { finished, pipeline } from 'node:stream/promises';
 import { constants, createZstdCompress } from 'node:zlib';
 import { pack } from 'tar-stream';
+import semver from 'semver';
+
+export function versionedApplicationPackage(packageJSON, version) {
+    if (typeof version !== 'string' || semver.valid(version) == null) {
+        throw new Error('Application version must be valid semver');
+    }
+    return {
+        data: Buffer.from(`${JSON.stringify({ ...packageJSON, version }, null, 2)}\n`),
+        name: 'package.json',
+    };
+}
 
 export async function collectEntries(rootArgument) {
     const root = path.resolve(rootArgument);

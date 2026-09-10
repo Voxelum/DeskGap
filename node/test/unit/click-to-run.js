@@ -62,3 +62,29 @@ test('packages two verified Zstd payloads behind a bootstrap', () => {
     assert.match(manifest, /^R\t[a-f0-9]{64}\t\d+\tresources\/app-identity\.json$/m);
     assert.match(manifest, /^A\t[a-f0-9]{64}\t11\tmain\.js$/m);
 });
+
+test('rejects previously signed bootstraps before generating or replacing an EXE', () => {
+    const script = path.resolve(__dirname, '../../scripts/package-click-to-run.mjs');
+    for (const [magic, directories, optionalSize] of [[0x20b, 112, 240], [0x10b, 96, 224]]) {
+        const peOffset = 64;
+        const optionalOffset = peOffset + 24;
+        const pe = Buffer.alloc(optionalOffset + optionalSize);
+        pe.write('MZ', 0, 'ascii');
+        pe.writeUInt32LE(peOffset, 0x3c);
+        pe.writeUInt32LE(0x4550, peOffset);
+        pe.writeUInt16LE(optionalSize, peOffset + 20);
+        pe.writeUInt16LE(magic, optionalOffset);
+        pe.writeUInt32LE(16, optionalOffset + directories - 4);
+        // The signing directory alone is sufficient to reject signing-before-assembly.
+        pe.writeUInt32LE(512, optionalOffset + directories + 4 * 8);
+        pe.writeUInt32LE(256, optionalOffset + directories + 4 * 8 + 4);
+        fs.writeFileSync(bootstrap, pe);
+        fs.writeFileSync(output, 'existing output');
+        const result = spawnSync(process.execPath, [script, bootstrap, runtime, application, output, '1.2.3'], {
+            encoding: 'utf8',
+        });
+        assert.notEqual(result.status, 0);
+        assert.match(result.stderr, /Bootstrap must be unsigned/);
+        assert.equal(fs.readFileSync(output, 'utf8'), 'existing output');
+    }
+});

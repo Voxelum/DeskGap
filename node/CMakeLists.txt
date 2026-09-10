@@ -66,6 +66,7 @@ add_executable(DeskGapNode
     src/node_bindings/credentials/credentials_wrap.cc
     src/node_bindings/system_preferences/system_preferences_wrap.cc
     src/node_bindings/windows_app_installer/windows_app_installer_wrap.cc
+    src/node_bindings/windows_executable/windows_executable_wrap.cc
     src/node_bindings/webview/webview_wrap.cc
     src/node_bindings/window/browser_window_wrap.cc
 )
@@ -93,6 +94,7 @@ if(APPLE)
 endif()
 
 if (WIN32)
+    target_link_libraries(DeskGapNode PRIVATE wintrust crypt32)
     target_sources(
         DeskGapNode PRIVATE
         ${CMAKE_SOURCE_DIR}/src/resources/win/App.manifest

@@ -24,6 +24,8 @@ let manifestHash = assetHash;
 let assetOverrides = {};
 let assetDelay = 0;
 let invalidSignature = false;
+let chunkedAsset = false;
+let additionalAssets = [];
 let server;
 let origin;
 
@@ -83,7 +85,7 @@ test.before(async () => {
                     size: assetContent.length,
                     url: '/asset',
                     ...assetOverrides,
-                }],
+                }, ...additionalAssets],
             };
             const signature = sign(null, Buffer.from(serializeUpdateManifestForSignature(unsigned)), privateKey).toString('base64');
             response.setHeader('content-type', 'application/json');
@@ -92,8 +94,9 @@ test.before(async () => {
         }
         if (request.url === '/asset') {
             if (assetDelay > 0) await new Promise(resolve => setTimeout(resolve, assetDelay));
-            response.setHeader('content-length', servedAsset.length);
-            response.end(servedAsset);
+            if (chunkedAsset) response.write(servedAsset.subarray(0, 1));
+            else response.setHeader('content-length', servedAsset.length);
+            response.end(chunkedAsset ? servedAsset.subarray(1) : servedAsset);
             return;
         }
         response.statusCode = 404;
@@ -115,13 +118,16 @@ test.beforeEach(() => {
     assetOverrides = {};
     assetDelay = 0;
     invalidSignature = false;
+    chunkedAsset = false;
+    additionalAssets = [];
 });
 
-function createUpdater() {
+function createUpdater(options = {}) {
     return new Updater({
         allowLoopback: true,
         session: { fetch: (input, init) => fetch(input, init) },
         trustedPublicKey: publicKey.export({ format: 'pem', type: 'spki' }),
+        ...options,
     });
 }
 
@@ -170,6 +176,122 @@ test('returns null for the current version and prereleases by default', async ()
     assert.equal((await updater.checkForUpdates(`${origin}/manifest.json`, { allowPrerelease: true })).version, '2.0.0-beta.1');
 });
 
+test('prefers an exact platform and architecture match over a universal payload', async () => {
+    assetOverrides = {
+        arch: 'any', platform: 'any', type: 'application', format: 'tar.zst',
+        requiredRuntimeApi: 1, unpackedSize: 1024,
+    };
+    additionalAssets = [{
+        ...assetOverrides, arch: process.arch, platform: process.platform,
+        name: 'specific.tar.zst', sha256: assetHash, size: assetContent.length, url: '/asset',
+    }];
+    const update = await createUpdater().checkForUpdates(`${origin}/manifest.json`);
+    assert.equal(update.asset.name, 'specific.tar.zst');
+});
+
+test('falls back to a runtime installer when the application requires a newer API', async () => {
+    additionalAssets = [{
+        arch: process.arch, platform: process.platform, type: 'application', format: 'tar.zst',
+        requiredRuntimeApi: 2, unpackedSize: 1024,
+        name: 'application.tar.zst', sha256: assetHash, size: assetContent.length, url: '/asset',
+    }];
+    const update = await createUpdater().checkForUpdates(`${origin}/manifest.json`);
+    assert.equal(update.asset.type, undefined);
+    assetOverrides = { ...additionalAssets[0] };
+    additionalAssets = [];
+    await assert.rejects(createUpdater().checkForUpdates(`${origin}/manifest.json`), /No update asset/);
+});
+
+test('downloads chunked assets without Content-Length using the signed size and hash', async () => {
+    chunkedAsset = true;
+    const updater = createUpdater();
+    const update = await updater.checkForUpdates(`${origin}/manifest.json`);
+    const downloaded = await updater.downloadUpdate(update, { directory: path.join(outputDirectory, 'chunked') });
+    assert.deepEqual(fs.readFileSync(downloaded.path), assetContent);
+});
+
+test('follows GitHub release redirects only through explicitly allowed origins', async () => {
+    const manifestURL = 'https://github.com/example/app/releases/download/v1.1.0/update.json';
+    const manifestCDN = 'https://release-assets.githubusercontent.com/manifest';
+    const assetURL = 'https://github.com/example/app/releases/download/v1.1.0/update.exe';
+    const assetCDN = 'https://release-assets.githubusercontent.com/asset';
+    const unsigned = {
+        version: '1.1.0',
+        assets: [{
+            arch: process.arch, platform: process.platform, name: 'update.exe',
+            sha256: assetHash, size: assetContent.length, url: assetURL,
+        }],
+    };
+    const signature = sign(null, Buffer.from(serializeUpdateManifestForSignature(unsigned)), privateKey).toString('base64');
+    const requests = [];
+    const session = {
+        async fetch(input, init) {
+            const url = String(input);
+            requests.push(url);
+            assert.equal(init.redirect, 'manual');
+            let response;
+            if (url === manifestURL || url === assetURL) {
+                response = new Response(null, { status: 302, headers: { location: url === manifestURL ? manifestCDN : assetCDN } });
+            } else if (url === manifestCDN) {
+                response = Response.json({ ...unsigned, signature });
+            } else if (url === assetCDN) {
+                response = new Response(assetContent);
+            } else {
+                throw new Error(`Unexpected request: ${url}`);
+            }
+            Object.defineProperty(response, 'url', { value: url });
+            return response;
+        },
+    };
+    await assert.rejects(createUpdater({ session }).checkForUpdates(manifestURL), /redirect origin is not allowed/);
+    assert.deepEqual(requests, [manifestURL]);
+    requests.length = 0;
+    const updater = createUpdater({
+        session,
+        allowedOrigins: ['https://github.com', 'https://release-assets.githubusercontent.com'],
+    });
+    const update = await updater.checkForUpdates(manifestURL);
+    const downloaded = await updater.downloadUpdate(update, { directory: path.join(outputDirectory, 'github-redirect') });
+    assert.deepEqual(fs.readFileSync(downloaded.path), assetContent);
+    assert.deepEqual(requests, [manifestURL, manifestCDN, assetURL, assetCDN]);
+});
+
+test('releases the download lock after failing to create its directory', async () => {
+    const updater = createUpdater();
+    const update = await updater.checkForUpdates(`${origin}/manifest.json`);
+    const directory = path.join(outputDirectory, 'retry-directory');
+    fs.writeFileSync(directory, 'not a directory');
+    await assert.rejects(updater.downloadUpdate(update, { directory }), { code: 'EEXIST' });
+    fs.unlinkSync(directory);
+    const downloaded = await updater.downloadUpdate(update, { directory });
+    assert.deepEqual(fs.readFileSync(downloaded.path), assetContent);
+});
+
+test('rejects copied or mutated downloaded metadata even for a verified artifact path', async () => {
+    const updater = createUpdater();
+    const update = await updater.checkForUpdates(`${origin}/manifest.json`);
+    const downloaded = await updater.downloadUpdate(update, { directory: path.join(outputDirectory, 'provenance') });
+    assert.equal(Object.isFrozen(downloaded), true);
+    assert.equal(Object.isFrozen(downloaded.asset), true);
+    await assert.rejects(updater.install({ ...downloaded }), /not downloaded/);
+    await assert.rejects(updater.install({ ...downloaded, version: '999.0.0' }), /not downloaded/);
+    await assert.rejects(createUpdater().install(downloaded), /not downloaded/);
+    fs.writeFileSync(downloaded.path, Buffer.alloc(assetContent.length));
+    await assert.rejects(updater.install(downloaded), /changed after verification/);
+});
+
+test('honors cancellation when the verified artifact is already cached', async () => {
+    const updater = createUpdater();
+    const update = await updater.checkForUpdates(`${origin}/manifest.json`);
+    const directory = path.join(outputDirectory, 'cached-cancelled');
+    await updater.downloadUpdate(update, { directory });
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(updater.downloadUpdate(update, { directory, signal: controller.signal }), { name: 'AbortError' });
+    const downloaded = await updater.downloadUpdate(update, { directory });
+    assert.deepEqual(fs.readFileSync(downloaded.path), assetContent);
+});
+
 test('accepts explicit tar.zst application payload metadata', async () => {
     assetOverrides = {
         format: 'tar.zst',
@@ -208,8 +330,12 @@ test('extracts and atomically activates a tar.zst application payload', async ()
     const active = JSON.parse(fs.readFileSync(path.join(outputDirectory, 'application', 'active.json'), 'utf8'));
     const payloadDirectory = path.join(outputDirectory, 'application', 'payloads', manifestHash);
     assert.equal(active.sha256, manifestHash);
+    assert.equal(active.requiredRuntimeApi, 1);
+    assert.equal(active.runtimeHash, undefined);
     assert.equal(fs.readFileSync(path.join(payloadDirectory, 'main.js'), 'utf8'), main.toString());
-    assert.equal(JSON.parse(fs.readFileSync(path.join(payloadDirectory, '.deskgap-payload.json'), 'utf8')).version, manifestVersion);
+    const completion = JSON.parse(fs.readFileSync(path.join(payloadDirectory, '.deskgap-payload.json'), 'utf8'));
+    assert.equal(completion.version, manifestVersion);
+    assert.equal(completion.requiredRuntimeApi, 1);
 });
 
 test('rejects traversal aliases in tar.zst application payloads', async () => {
@@ -232,6 +358,69 @@ test('rejects traversal aliases in tar.zst application payloads', async () => {
     assert.equal(createHash('sha256').update(fs.readFileSync(downloaded.path)).digest('hex'), update.asset.sha256);
     await assert.rejects(updater.install(downloaded), /unsafe path/);
     assert.equal(fs.existsSync(path.join(outputDirectory, 'outside.txt')), false);
+});
+
+test('does not activate an application payload with a different package version', async () => {
+    const activePath = path.join(outputDirectory, 'application', 'active.json');
+    const previousActive = JSON.stringify({ sha256: assetHash, version: '1.0.0' });
+    fs.mkdirSync(path.dirname(activePath), { recursive: true });
+    fs.writeFileSync(activePath, previousActive);
+    const packageJSON = Buffer.from(JSON.stringify({ name: 'payload-test', version: '0.9.0' }));
+    servedAsset = await createApplicationPayload([['package.json', packageJSON]]);
+    manifestHash = createHash('sha256').update(servedAsset).digest('hex');
+    assetOverrides = {
+        type: 'application', format: 'tar.zst', requiredRuntimeApi: 1,
+        name: 'wrong-version.tar.zst', size: servedAsset.length, unpackedSize: packageJSON.length,
+    };
+    const updater = createUpdater();
+    const update = await updater.checkForUpdates(`${origin}/manifest.json`);
+    const downloaded = await updater.downloadUpdate(update, { directory: path.join(outputDirectory, 'wrong-version') });
+    await assert.rejects(updater.install(downloaded), /version does not match/);
+    assert.equal(fs.readFileSync(activePath, 'utf8'), previousActive);
+});
+
+test('rejects missing or external application entries before changing activation', async () => {
+    const activePath = path.join(outputDirectory, 'application', 'active.json');
+    const previousActive = JSON.stringify({ sha256: assetHash, version: '1.0.0' });
+    fs.mkdirSync(path.dirname(activePath), { recursive: true });
+    fs.writeFileSync(activePath, previousActive);
+    const externalEntry = path.join(outputDirectory, 'external-entry.js');
+    fs.writeFileSync(externalEntry, 'module.exports = true;');
+    for (const main of ['missing.js', externalEntry]) {
+        const packageJSON = Buffer.from(JSON.stringify({ name: 'payload-test', version: manifestVersion, main }));
+        servedAsset = await createApplicationPayload([['package.json', packageJSON]]);
+        manifestHash = createHash('sha256').update(servedAsset).digest('hex');
+        assetOverrides = {
+            type: 'application', format: 'tar.zst', requiredRuntimeApi: 1,
+            name: 'invalid-entry.tar.zst', size: servedAsset.length, unpackedSize: packageJSON.length,
+        };
+        const updater = createUpdater();
+        const update = await updater.checkForUpdates(`${origin}/manifest.json`);
+        const downloaded = await updater.downloadUpdate(update, { directory: path.join(outputDirectory, 'invalid-entry') });
+        await assert.rejects(updater.install(downloaded), /Application payload entry/);
+        assert.equal(fs.readFileSync(activePath, 'utf8'), previousActive);
+    }
+});
+
+test('does not reactivate a cached payload whose entry has disappeared', async () => {
+    const main = Buffer.from('module.exports = "cached";');
+    const packageJSON = Buffer.from(JSON.stringify({ name: 'payload-test', version: manifestVersion, main: 'main.js' }));
+    servedAsset = await createApplicationPayload([['package.json', packageJSON], ['main.js', main]]);
+    manifestHash = createHash('sha256').update(servedAsset).digest('hex');
+    assetOverrides = {
+        type: 'application', format: 'tar.zst', requiredRuntimeApi: 1,
+        name: 'cached-entry.tar.zst', size: servedAsset.length, unpackedSize: packageJSON.length + main.length,
+    };
+    const updater = createUpdater();
+    const update = await updater.checkForUpdates(`${origin}/manifest.json`);
+    const downloaded = await updater.downloadUpdate(update, { directory: path.join(outputDirectory, 'cached-entry') });
+    await updater.install(downloaded);
+    const activePath = path.join(outputDirectory, 'application', 'active.json');
+    const previousActive = JSON.stringify({ sha256: assetHash, version: '1.0.0' });
+    fs.writeFileSync(activePath, previousActive);
+    fs.unlinkSync(path.join(outputDirectory, 'application', 'payloads', manifestHash, 'main.js'));
+    await assert.rejects(updater.install(downloaded), /Application payload entry/);
+    assert.equal(fs.readFileSync(activePath, 'utf8'), previousActive);
 });
 
 test('rejects platform-ambiguous paths in tar.zst application payloads', async () => {

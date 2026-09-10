@@ -14,7 +14,7 @@ namespace {
         },
     };
 
-    std::runtime_error SecretError(const char* operation, GError* error) {
+    std::runtime_error MakeSecretError(const char* operation, GError* error) {
         std::string message = error == nullptr ? "secure storage backend unavailable" : error->message;
         if (error != nullptr) g_error_free(error);
         return std::runtime_error(std::string(operation) + " failed: " + message);
@@ -32,7 +32,7 @@ std::optional<std::string> DeskGap::Credentials::GetPassword(
         "account", account.c_str(),
         nullptr
     );
-    if (error != nullptr) throw SecretError("Secret Service lookup", error);
+    if (error != nullptr) throw MakeSecretError("Secret Service lookup", error);
     if (password == nullptr) return std::nullopt;
     std::string result(password);
     secret_password_free(password);
@@ -57,7 +57,7 @@ void DeskGap::Credentials::SetPassword(
         "account", account.c_str(),
         nullptr
     )) {
-        throw SecretError("Secret Service store", error);
+        throw MakeSecretError("Secret Service store", error);
     }
 }
 
@@ -69,7 +69,7 @@ bool DeskGap::Credentials::DeletePassword(const std::string& service, const std:
         "account", account.c_str(),
         nullptr
     );
-    if (error != nullptr) throw SecretError("Secret Service delete", error);
+    if (error != nullptr) throw MakeSecretError("Secret Service delete", error);
     return deleted;
 }
 
@@ -83,7 +83,7 @@ std::vector<DeskGap::Credentials::Credential> DeskGap::Credentials::FindCredenti
         "service", service.c_str(),
         nullptr
     );
-    if (error != nullptr) throw SecretError("Secret Service search", error);
+    if (error != nullptr) throw MakeSecretError("Secret Service search", error);
 
     std::vector<Credential> result;
     for (GList* current = items; current != nullptr; current = current->next) {
@@ -97,7 +97,7 @@ std::vector<DeskGap::Credentials::Credential> DeskGap::Credentials::FindCredenti
         if (retrieveError != nullptr) {
             if (attributes != nullptr) g_hash_table_unref(attributes);
             g_list_free_full(items, g_object_unref);
-            throw SecretError("Secret Service retrieve", retrieveError);
+            throw MakeSecretError("Secret Service retrieve", retrieveError);
         }
         if (account != nullptr && value != nullptr) {
             const gchar* password = secret_value_get_text(value);

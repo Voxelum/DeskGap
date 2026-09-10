@@ -23,6 +23,12 @@ export interface WindowsAppInstallerNative {
 
 export const windowsAppInstallerNative = bindings.windowsAppInstallerNative as WindowsAppInstallerNative | undefined;
 
+export interface WindowsExecutableNative {
+    verifySignature(filePath: string, expectedPublishers: readonly string[]): Promise<void>;
+}
+
+export const windowsExecutableNative: WindowsExecutableNative | undefined = bindings.windowsExecutableNative;
+
 export interface ExternalWindowNative {
     isSupported(): boolean;
     moveAndResize(processId: number, x: number, y: number, width: number, height: number, timeout: number, dip: boolean): {
@@ -64,8 +70,7 @@ export interface AppNative {
     getArgv(): string[]
 }
 
-//@ts-expect-error
-export declare class MenuItemNative {
+declare class MenuItemNativeBinding {
     setEnabled(enabled: boolean): void;
     setLabel(label: string): void;
     setChecked(checked: boolean): void;
@@ -74,15 +79,13 @@ export declare class MenuItemNative {
     constructor(role: string, typeCode: number, submenu: MenuNative | null, onClick: () => void);
 }
 
-//@ts-expect-error
-export declare class MenuNative {
+declare class MenuNativeBinding {
     append(item: MenuItemNative): void;
     destroy(): void;
     constructor(typeCode: number, callbacks: {});
 }
 
-//@ts-expect-error
-export declare class TrayNative {
+declare class TrayNativeBinding {
     setTitle(title: string): void
     setIcon(image: NativeImageNative): void
     setTooltip(tooltip: string): void
@@ -96,8 +99,7 @@ export declare class TrayNative {
     })
 }
 
-//@ts-expect-error
-export declare class NativeImageNative {
+declare class NativeImageNativeBinding {
     constructor(sourceType?: number, data?: string | Buffer, widthOrScaleFactor?: number, height?: number, scaleFactor?: number)
     addRepresentation(buffer: Buffer, width?: number, height?: number, scaleFactor?: number): void
     crop(rectangle: { x: number; y: number; width: number; height: number }): NativeImageNative
@@ -111,8 +113,7 @@ export declare class NativeImageNative {
     toPNG(scaleFactor?: number): Buffer
 }
 
-//@ts-expect-error
-export declare class NotificationNative {
+declare class NotificationNativeBinding {
     constructor(options: {
         title: string;
         body: string;
@@ -132,8 +133,7 @@ export declare class NotificationNative {
 /**
  * node\src\node_bindings\webview\webview_wrap.cc
  */
-//@ts-expect-error
-export declare class WebViewNative {
+declare class WebViewNativeBinding {
     constructor(
         callbacks: {
             didFinishLoad: () => void,
@@ -182,8 +182,7 @@ export declare class WebViewNative {
 /**
  * node\src\node_bindings\window\browser_window_wrap.cc
  */
-//@ts-expect-error
-export declare class BrowserWindowNative {
+declare class BrowserWindowNativeBinding {
     constructor(webview: WebViewNative,
         callbacks: {
             onBlur(): void
@@ -361,16 +360,16 @@ export interface CredentialsNative {
     findCredentials(service: string): Promise<Array<{ account: string; password: string }>>
 }
 
-//@ts-expect-error
-export const MenuItemNative = bindings.MenuItemNative
-//@ts-expect-error
-export const MenuNative = bindings.MenuNative
-//@ts-expect-error
-export const TrayNative = bindings.TrayNative
-//@ts-expect-error
-export const NativeImageNative = bindings.NativeImageNative
-//@ts-expect-error
-export const NotificationNative = bindings.NotificationNative
+export type MenuItemNative = MenuItemNativeBinding
+export const MenuItemNative: typeof MenuItemNativeBinding = bindings.MenuItemNative
+export type MenuNative = MenuNativeBinding
+export const MenuNative: typeof MenuNativeBinding = bindings.MenuNative
+export type TrayNative = TrayNativeBinding
+export const TrayNative: typeof TrayNativeBinding = bindings.TrayNative
+export type NativeImageNative = NativeImageNativeBinding
+export const NativeImageNative: typeof NativeImageNativeBinding = bindings.NativeImageNative
+export type NotificationNative = NotificationNativeBinding
+export const NotificationNative: typeof NotificationNativeBinding = bindings.NotificationNative
 export const appNative: AppNative = bindings.appNative
 export const shellNative: ShellNative = bindings.shellNative
 export const screenNative: ScreenNative = bindings.screenNative
@@ -378,9 +377,9 @@ export const clipboardNative: ClipboardNative = bindings.clipboardNative
 export const powerMonitorNative: PowerMonitorNative = bindings.powerMonitorNative
 export const credentialsNative: CredentialsNative = bindings.credentialsNative
 export const dialogNative: DialogNative = bindings.dialogNative
-//@ts-expect-error
-export const WebViewNative: WebViewNative = bindings.WebViewNative
-//@ts-expect-error
-export const BrowserWindowNative: BrowserWindowNative = bindings.BrowserWindowNative
+export type WebViewNative = WebViewNativeBinding
+export const WebViewNative: typeof WebViewNativeBinding = bindings.WebViewNative
+export type BrowserWindowNative = BrowserWindowNativeBinding
+export const BrowserWindowNative: typeof BrowserWindowNativeBinding = bindings.BrowserWindowNative
 export const systemPreferencesNative: SystemPreferencesNative = bindings.systemPreferencesNative
 export const setNativeExceptionConstructor: (execptionClass: any) => void = bindings.setNativeExceptionConstructor

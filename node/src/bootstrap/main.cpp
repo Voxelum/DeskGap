@@ -5,6 +5,7 @@
 #include <shlobj.h>
 
 #include "zstd.h"
+#include "../windows/pe_authenticode.h"
 
 #include <algorithm>
 #include <array>
@@ -13,6 +14,8 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <regex>
+#include <sstream>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -75,6 +78,63 @@ struct Container {
     std::vector<ManifestEntry> runtimeManifest;
     std::vector<ManifestEntry> applicationManifest;
 };
+
+struct Version {
+    std::array<std::string, 3> core;
+    std::vector<std::string> prerelease;
+};
+
+bool numericIdentifier(const std::string& value) {
+    return !value.empty() && value.find_first_not_of("0123456789") == std::string::npos;
+}
+
+int compareNumeric(const std::string& left, const std::string& right) {
+    if (left.size() != right.size()) return left.size() > right.size() ? 1 : -1;
+    return left.compare(right);
+}
+
+Version parseVersion(const std::string& value) {
+    static const std::regex pattern(
+        R"(^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$)");
+    std::smatch match;
+    if (value.size() > 256 || !std::regex_match(value, match, pattern)) {
+        throw std::runtime_error("Application version is not valid semver");
+    }
+    Version result{{match[1], match[2], match[3]}, {}};
+    for (const auto& part : result.core) {
+        if (compareNumeric(part, "9007199254740991") > 0) throw std::runtime_error("Application version number is too large");
+    }
+    if (match[5].matched) {
+        std::istringstream input(match[5].str());
+        std::string identifier;
+        while (std::getline(input, identifier, '.')) {
+            if (numericIdentifier(identifier) && identifier.size() > 1 && identifier.front() == '0') {
+                throw std::runtime_error("Application prerelease version has a leading zero");
+            }
+            result.prerelease.push_back(identifier);
+        }
+    }
+    return result;
+}
+
+bool newerVersion(const std::string& left, const std::string& right) {
+    const auto a = parseVersion(left);
+    const auto b = parseVersion(right);
+    for (std::size_t index = 0; index < a.core.size(); index++) {
+        const int order = compareNumeric(a.core[index], b.core[index]);
+        if (order != 0) return order > 0;
+    }
+    if (a.prerelease.empty() || b.prerelease.empty()) return a.prerelease.empty() && !b.prerelease.empty();
+    for (std::size_t index = 0; index < std::min<std::size_t>(a.prerelease.size(), b.prerelease.size()); index++) {
+        const auto& x = a.prerelease[index];
+        const auto& y = b.prerelease[index];
+        const bool xNumeric = numericIdentifier(x);
+        const bool yNumeric = numericIdentifier(y);
+        const int order = xNumeric != yNumeric ? (xNumeric ? -1 : 1) : xNumeric ? compareNumeric(x, y) : x.compare(y);
+        if (order != 0) return order > 0;
+    }
+    return a.prerelease.size() > b.prerelease.size();
+}
 
 std::runtime_error windowsError(const char* operation) {
     return std::runtime_error(std::string(operation) + " failed with Windows error " + std::to_string(GetLastError()));
@@ -253,51 +313,11 @@ std::vector<ManifestEntry> parseManifest(const std::string& manifest, char secti
     return result;
 }
 
-std::uint16_t readUInt16(const std::vector<std::uint8_t>& bytes, std::size_t offset) {
-    if (offset + sizeof(std::uint16_t) > bytes.size()) throw std::runtime_error("PE header is truncated");
-    std::uint16_t result = 0;
-    std::memcpy(&result, bytes.data() + offset, sizeof(result));
-    return result;
-}
-
-std::uint32_t readUInt32(const std::vector<std::uint8_t>& bytes, std::size_t offset) {
-    if (offset + sizeof(std::uint32_t) > bytes.size()) throw std::runtime_error("PE header is truncated");
-    std::uint32_t result = 0;
-    std::memcpy(&result, bytes.data() + offset, sizeof(result));
-    return result;
-}
-
-std::size_t signedContentBoundary(const std::vector<std::uint8_t>& executable) {
-    if (executable.size() < 0x40 || executable[0] != 'M' || executable[1] != 'Z') {
-        throw std::runtime_error("Click-to-run executable is not a PE file");
-    }
-    const std::size_t peOffset = readUInt32(executable, 0x3c);
-    if (peOffset + 24 > executable.size() || std::memcmp(executable.data() + peOffset, "PE\0\0", 4) != 0) {
-        throw std::runtime_error("Click-to-run PE header is invalid");
-    }
-    const std::size_t optionalOffset = peOffset + 24;
-    const std::size_t optionalSize = readUInt16(executable, peOffset + 20);
-    if (optionalOffset + optionalSize > executable.size()) throw std::runtime_error("Click-to-run optional PE header is truncated");
-    const std::uint16_t magic = readUInt16(executable, optionalOffset);
-    const std::size_t directoryOffset = magic == 0x20b ? 112 : magic == 0x10b ? 96 : 0;
-    const std::size_t countOffset = magic == 0x20b ? 108 : magic == 0x10b ? 92 : 0;
-    if (directoryOffset == 0 || optionalSize < directoryOffset + 5 * 8 || readUInt32(executable, optionalOffset + countOffset) < 5) {
-        throw std::runtime_error("Click-to-run PE data directories are invalid");
-    }
-    const std::size_t securityDirectory = optionalOffset + directoryOffset + 4 * 8;
-    const std::uint32_t certificateOffset = readUInt32(executable, securityDirectory);
-    const std::uint32_t certificateSize = readUInt32(executable, securityDirectory + 4);
-    if (certificateOffset == 0 && certificateSize == 0) return executable.size();
-    if (certificateOffset == 0 || certificateSize < 8 ||
-        static_cast<std::uint64_t>(certificateOffset) + certificateSize != executable.size()) {
-        throw std::runtime_error("Click-to-run Authenticode certificate table is invalid");
-    }
-    return certificateOffset;
-}
-
 Container parseContainer(const std::vector<std::uint8_t>& executable) {
-    const std::size_t boundary = signedContentBoundary(executable);
-    for (std::size_t padding = 0; padding <= 7 && boundary >= sizeof(Footer) + padding; padding++) {
+    const auto layout = DeskGap::ReadPeAuthenticodeLayout(executable);
+    const std::size_t boundary = layout.contentEnd;
+    const std::size_t maximumPadding = layout.hasCertificates ? 7 : 0;
+    for (std::size_t padding = 0; padding <= maximumPadding && boundary >= sizeof(Footer) + padding; padding++) {
         const std::size_t offset = boundary - sizeof(Footer) - padding;
         if (!std::all_of(executable.begin() + offset + sizeof(Footer), executable.begin() + boundary,
             [](std::uint8_t value) { return value == 0; })) continue;
@@ -311,6 +331,7 @@ Container parseContainer(const std::vector<std::uint8_t>& executable) {
                 footer.runtimeSize <= kMaximumArchiveBytes && footer.applicationSize <= kMaximumArchiveBytes &&
                 metadataSize <= kMaximumMetadataBytes && suffixSize <= offset) {
                 const std::size_t runtimeOffset = offset - static_cast<std::size_t>(suffixSize);
+                if (runtimeOffset < layout.imageEnd) continue;
                 const std::size_t applicationOffset = runtimeOffset + static_cast<std::size_t>(footer.runtimeSize);
                 std::size_t metadataOffset = applicationOffset + static_cast<std::size_t>(footer.applicationSize);
                 Container result;
@@ -329,6 +350,7 @@ Container parseContainer(const std::vector<std::uint8_t>& executable) {
                 std::copy(std::begin(footer.applicationSha256), std::end(footer.applicationSha256), result.applicationSha256.begin());
                 if (safeComponent(result.appName) && safeRelativePath(result.entry) &&
                     sha256(result.runtimeArchive) == result.runtimeSha256 && sha256(result.applicationArchive) == result.applicationSha256) {
+                    parseVersion(result.appVersion);
                     result.runtimeManifest = parseManifest(manifest, 'R');
                     result.applicationManifest = parseManifest(manifest, 'A');
                     return result;
@@ -565,6 +587,47 @@ void writeTextAtomically(const fs::path& target, const std::string& value) {
     }
 }
 
+std::string bundleRecord(const Container& container) {
+    std::string result = "DG-BUNDLE-1\n" + container.appVersion + "\n" + container.entry + "\n" +
+        hex(container.runtimeSha256) + "\n" + hex(container.applicationSha256) + "\n";
+    const auto appendManifest = [&](char section, const std::vector<ManifestEntry>& entries) {
+        for (const auto& entry : entries) {
+            result += std::string(1, section) + "\t" + hex(entry.sha256) + "\t" + std::to_string(entry.size) + "\t" + entry.path + "\n";
+        }
+    };
+    appendManifest('R', container.runtimeManifest);
+    appendManifest('A', container.applicationManifest);
+    return result;
+}
+
+Container readBundleRecord(const fs::path& file) {
+    const DWORD attributes = GetFileAttributesW(file.c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY)) != 0 ||
+        fs::file_size(file) > kMaximumMetadataBytes) throw std::runtime_error("Invalid installed bundle record");
+    const auto bytes = readFile(file);
+    std::istringstream input(std::string(bytes.begin(), bytes.end()));
+    std::string header, runtimeHash, applicationHash;
+    Container result;
+    if (!std::getline(input, header) || header != "DG-BUNDLE-1" || !std::getline(input, result.appVersion) ||
+        !std::getline(input, result.entry) || !std::getline(input, runtimeHash) || !std::getline(input, applicationHash) ||
+        !safeRelativePath(result.entry)) throw std::runtime_error("Invalid installed bundle metadata");
+    parseVersion(result.appVersion);
+    result.runtimeSha256 = parseHash(runtimeHash);
+    result.applicationSha256 = parseHash(applicationHash);
+    if (file.stem() != utf8ToWide(hex(result.runtimeSha256))) throw std::runtime_error("Installed bundle runtime hash mismatch");
+    const std::string manifest((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    result.runtimeManifest = parseManifest(manifest, 'R');
+    result.applicationManifest = parseManifest(manifest, 'A');
+    return result;
+}
+
+void writeBundleMarker(const fs::path& applicationRoot, const Container& container) {
+    const std::string marker = "{\"sha256\":\"" + hex(container.applicationSha256) +
+        "\",\"version\":\"" + container.appVersion + "\"}";
+    writeTextAtomically(applicationRoot / L"payloads" / utf8ToWide(hex(container.applicationSha256)) / L".deskgap-payload.json", marker);
+    writeTextAtomically(applicationRoot / L"bundles" / utf8ToWide(hex(container.runtimeSha256) + ".json"), marker);
+}
+
 std::wstring quoteArgument(const std::wstring& value) {
     if (value.empty()) return L"\"\"";
     if (value.find_first_of(L" \t\"") == std::wstring::npos) return value;
@@ -590,13 +653,65 @@ std::wstring quoteArgument(const std::wstring& value) {
     return result;
 }
 
-void launch(const fs::path& executable) {
+struct LaunchOptions {
+    DWORD waitForPid = 0;
+    std::vector<std::wstring> arguments;
+};
+
+LaunchOptions parseLaunchOptions() {
     int argumentCount = 0;
     LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &argumentCount);
     if (arguments == nullptr) throw windowsError("CommandLineToArgvW");
-    std::wstring commandLine = quoteArgument(executable.wstring());
-    for (int index = 1; index < argumentCount; index++) commandLine += L" " + quoteArgument(arguments[index]);
+    LaunchOptions result;
+    try {
+        const std::wstring prefix = L"--deskgap-wait-for-pid=";
+        for (int index = 1; index < argumentCount; index++) {
+            const std::wstring argument = arguments[index];
+            if (argument == L"--deskgap-wait-for-pid") throw std::runtime_error("--deskgap-wait-for-pid requires =<pid>");
+            if (!argument.starts_with(prefix)) {
+                result.arguments.push_back(argument);
+                continue;
+            }
+            if (result.waitForPid != 0) throw std::runtime_error("--deskgap-wait-for-pid may only be specified once");
+            DWORD pid = 0;
+            const auto value = argument.substr(prefix.size());
+            for (const wchar_t character : value) {
+                if (character < L'0' || character > L'9' || pid > (MAXDWORD - (character - L'0')) / 10) {
+                    throw std::runtime_error("--deskgap-wait-for-pid must be a positive DWORD process ID");
+                }
+                pid = pid * 10 + (character - L'0');
+            }
+            if (pid == 0 || pid == GetCurrentProcessId()) {
+                throw std::runtime_error("--deskgap-wait-for-pid must name a positive process ID other than this bootstrap");
+            }
+            result.waitForPid = pid;
+        }
+    }
+    catch (...) {
+        LocalFree(arguments);
+        throw;
+    }
     LocalFree(arguments);
+    return result;
+}
+
+void waitForPreviousProcess(DWORD pid) {
+    if (pid == 0) return;
+    Handle process(OpenProcess(SYNCHRONIZE, FALSE, pid));
+    if (process.value == nullptr) {
+        const DWORD error = GetLastError();
+        if (error == ERROR_INVALID_PARAMETER) return; // The previous process has already exited.
+        throw std::runtime_error("OpenProcess for --deskgap-wait-for-pid=" + std::to_string(pid) +
+            " failed with Windows error " + std::to_string(error));
+    }
+    const DWORD status = WaitForSingleObject(process.value, INFINITE);
+    if (status == WAIT_FAILED) throw windowsError("WaitForSingleObject for --deskgap-wait-for-pid");
+    if (status != WAIT_OBJECT_0) throw std::runtime_error("Waiting for the previous process failed with status " + std::to_string(status));
+}
+
+void launch(const fs::path& executable, const std::vector<std::wstring>& arguments) {
+    std::wstring commandLine = quoteArgument(executable.wstring());
+    for (const auto& argument : arguments) commandLine += L" " + quoteArgument(argument);
 
     STARTUPINFOW startupInfo{sizeof(startupInfo)};
     PROCESS_INFORMATION processInfo{};
@@ -608,6 +723,9 @@ void launch(const fs::path& executable) {
 }
 
 void run() {
+    const auto options = parseLaunchOptions();
+    // Wait before taking the installation mutex or changing any installed application state.
+    waitForPreviousProcess(options.waitForPid);
     const Container container = parseContainer(readFile(executablePath()));
     const std::string runtimeHash = hex(container.runtimeSha256);
     const std::string applicationHash = hex(container.applicationSha256);
@@ -623,14 +741,39 @@ void run() {
     if (WaitForSingleObject(mutex.value, INFINITE) != WAIT_OBJECT_0) throw windowsError("WaitForSingleObject");
 
     const fs::path runtimeDirectory = programRoot / L"runtime" / utf8ToWide(runtimeHash);
-    const fs::path applicationDirectory = programRoot / L"application" / L"payloads" / utf8ToWide(applicationHash);
+    const fs::path applicationRoot = programRoot / L"application";
+    const fs::path applicationDirectory = applicationRoot / L"payloads" / utf8ToWide(applicationHash);
+    fs::path entry = runtimeDirectory / fs::path(utf8ToWide(container.entry));
     try {
         installArchive(container.runtimeArchive, runtimeDirectory, container.runtimeManifest);
         installArchive(container.applicationArchive, applicationDirectory, container.applicationManifest, true);
-        writeTextAtomically(applicationDirectory / L".deskgap-payload.json",
-            "{\"sha256\":\"" + applicationHash + "\",\"version\":\"" + container.appVersion + "\"}");
-        writeTextAtomically(programRoot / L"application" / L"active.json",
-            "{\"sha256\":\"" + applicationHash + "\",\"version\":\"" + container.appVersion + "\"}");
+        writeBundleMarker(applicationRoot, container);
+        const fs::path bundles = applicationRoot / L"bundles";
+        writeTextAtomically(bundles / utf8ToWide(runtimeHash + ".bundle"), bundleRecord(container));
+
+        // A newer full package must carry its runtime with it, even when an old launcher is reopened.
+        // Records are published only after extraction; every selected file is reverified before launch.
+        std::string selectedVersion = container.appVersion;
+        for (const auto& record : fs::directory_iterator(bundles)) {
+            if (record.path().extension() != L".bundle") continue;
+            try {
+                const auto candidate = readBundleRecord(record.path());
+                if (!newerVersion(candidate.appVersion, selectedVersion)) continue;
+                const fs::path candidateRuntime = programRoot / L"runtime" / utf8ToWide(hex(candidate.runtimeSha256));
+                const fs::path candidateApplication = applicationRoot / L"payloads" / utf8ToWide(hex(candidate.applicationSha256));
+                const fs::path candidateEntry = candidateRuntime / fs::path(utf8ToWide(candidate.entry));
+                if (!validateDirectory(candidateRuntime, candidate.runtimeManifest) ||
+                    !validateDirectory(candidateApplication, candidate.applicationManifest, true) ||
+                    !fs::is_regular_file(candidateEntry)) continue;
+                writeBundleMarker(applicationRoot, candidate);
+                entry = candidateEntry;
+                selectedVersion = candidate.appVersion;
+            }
+            catch (const std::exception& error) {
+                const std::string message = "DeskGap ignored an invalid installed bundle: " + std::string(error.what()) + "\n";
+                OutputDebugStringA(message.c_str());
+            }
+        }
     }
     catch (...) {
         ReleaseMutex(mutex.value);
@@ -638,9 +781,8 @@ void run() {
     }
     ReleaseMutex(mutex.value);
 
-    const fs::path entry = runtimeDirectory / fs::path(utf8ToWide(container.entry));
     if (!fs::is_regular_file(entry)) throw std::runtime_error("Extracted runtime entry does not exist");
-    launch(entry);
+    launch(entry, options.arguments);
 }
 }
 

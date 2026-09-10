@@ -34,8 +34,8 @@ app.once('ready', async () => {
             const signature = sign(null, Buffer.from(serializeUpdateManifestForSignature(unsigned)), privateKey).toString('base64')
             response.end(JSON.stringify({ ...unsigned, signature }))
         } else if (request.url === '/fixture') {
-            response.setHeader('content-length', content.length)
-            response.end(content)
+            response.write(content.subarray(0, 1))
+            response.end(content.subarray(1))
         } else {
             response.statusCode = 404
             response.end()

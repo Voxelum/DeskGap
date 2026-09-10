@@ -1,6 +1,6 @@
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { createTarZstd } from './archive.mjs';
+import { createTarZstd, versionedApplicationPackage } from './archive.mjs';
 
 const [sourceArgument, outputArgument, versionArgument] = process.argv.slice(2);
 if (!sourceArgument || !outputArgument) {
@@ -15,7 +15,9 @@ if (typeof version !== 'string' || version === '') {
     throw new Error('Application version must be provided or declared in package.json');
 }
 
-const archive = await createTarZstd(sourceDirectory, outputPath);
+const archive = await createTarZstd(sourceDirectory, outputPath, 10, [
+    versionedApplicationPackage(packageJSON, version),
+]);
 if (archive.entries.some(entry => entry.name.toLowerCase() === '.deskgap-payload.json')) {
     await rm(outputPath, { force: true });
     throw new Error('Application payload cannot contain the reserved .deskgap-payload.json marker');

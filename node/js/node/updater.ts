@@ -10,6 +10,8 @@ import { createZstdDecompress } from 'zlib';
 import semver = require('semver');
 import { app } from './app';
 import { getApplicationPayloadRoot, payloadCompletionFileName, runtimeApiVersion } from './internal/application-payload';
+import { validateApplicationEntry } from './internal/application-entry';
+import { fileVerificationFailure } from './internal/update-file';
 import { EventEmitter, IEventMap } from './internal/events';
 import { Session, session } from './session';
 
@@ -85,7 +87,7 @@ export interface UpdaterEvents extends IEventMap {
 }
 
 export class Updater extends EventEmitter<UpdaterEvents> {
-    private readonly verifiedArtifacts_ = new Map<string, string>();
+    private readonly verifiedArtifacts_ = new WeakSet<DownloadedUpdate>();
     private readonly approvedUpdates_ = new WeakSet<UpdateInfo>();
     private readonly activeDownloads_ = new Set<string>();
     private readonly session_: Session;
@@ -134,6 +136,9 @@ export class Updater extends EventEmitter<UpdaterEvents> {
             const matchingAssets = manifest.assets.filter(candidate =>
                 (candidate.platform === process.platform || candidate.platform === 'any') &&
                 (candidate.arch === process.arch || candidate.arch === 'any')
+            ).sort((left, right) =>
+                Number(right.platform === process.platform) + Number(right.arch === process.arch) -
+                Number(left.platform === process.platform) - Number(left.arch === process.arch)
             );
             const asset = matchingAssets.find(candidate =>
                 candidate.type === 'application' && candidate.requiredRuntimeApi! <= runtimeApiVersion
@@ -171,10 +176,14 @@ export class Updater extends EventEmitter<UpdaterEvents> {
         const temporaryPath = `${finalPath}.${randomUUID()}.part`;
         if (this.activeDownloads_.has(finalPath)) throw new Error('An update download is already writing this artifact');
         this.activeDownloads_.add(finalPath);
-        await mkdir(directory, { recursive: true });
 
         try {
-            const existing = await verifyFile(finalPath, update.asset.size, update.asset.sha256).catch(() => false);
+            options.signal?.throwIfAborted();
+            await mkdir(directory, { recursive: true });
+            const existing = await verifyFile(finalPath, update.asset.size, update.asset.sha256).catch(error => {
+                if (error.code === 'ENOENT') return false;
+                throw error;
+            });
             if (!existing) {
                 const assetURL = secureURL(update.asset.url, this.allowLoopback_);
                 const manifestOrigin = secureURL(update.manifestURL, this.allowLoopback_).origin;
@@ -185,20 +194,28 @@ export class Updater extends EventEmitter<UpdaterEvents> {
                     new Set([manifestOrigin, assetURL.origin, ...this.allowedOrigins_]),
                     this.allowLoopback_,
                 );
-                if (!response.ok || response.body == null) {
-                    throw new Error(`Update download failed with status ${response.status}`);
+                try {
+                    if (!response.ok || response.body == null) {
+                        throw new Error(`Update download failed with status ${response.status}`);
+                    }
+                    secureURL(response.url || update.asset.url, this.allowLoopback_);
+                    const contentLength = response.headers.get('content-length');
+                    if (contentLength != null &&
+                        (!/^\d+$/.test(contentLength) || Number(contentLength) !== update.asset.size)) {
+                        throw new Error(`Update size mismatch: expected ${update.asset.size}, received ${contentLength}`);
+                    }
+                    await this.writeDownload_(response, temporaryPath, update.asset, options.signal);
                 }
-                secureURL(response.url || update.asset.url, this.allowLoopback_);
-                const contentLength = Number(response.headers.get('content-length'));
-                if (Number.isFinite(contentLength) && contentLength !== update.asset.size) {
-                    throw new Error(`Update size mismatch: expected ${update.asset.size}, received ${contentLength}`);
+                finally {
+                    if (!response.body?.locked) await response.body?.cancel();
                 }
-                await this.writeDownload_(response, temporaryPath, update.asset, options.signal);
+                options.signal?.throwIfAborted();
                 await rm(finalPath, { force: true });
                 await rename(temporaryPath, finalPath);
             }
-            const downloaded: DownloadedUpdate = { ...update, path: finalPath };
-            this.verifiedArtifacts_.set(finalPath, update.asset.sha256.toLowerCase());
+            options.signal?.throwIfAborted();
+            const downloaded: DownloadedUpdate = Object.freeze({ ...update, path: finalPath });
+            this.verifiedArtifacts_.add(downloaded);
             this.trigger_('update-downloaded', null, downloaded);
             return downloaded;
         }
@@ -214,14 +231,14 @@ export class Updater extends EventEmitter<UpdaterEvents> {
     }
 
     async install(update: DownloadedUpdate, options: InstallUpdateOptions = {}): Promise<void> {
-        const artifactPath = path.resolve(update.path);
-        const expectedHash = this.verifiedArtifacts_.get(artifactPath);
-        if (expectedHash == null || expectedHash !== update.asset.sha256.toLowerCase()) {
+        if (!this.verifiedArtifacts_.has(update)) {
             throw new Error('Update artifact was not downloaded and verified by this Updater');
         }
+        const artifactPath = path.resolve(update.path);
+        const expectedHash = update.asset.sha256;
         const verificationFailure = await fileVerificationFailure(artifactPath, update.asset.size, expectedHash);
         if (verificationFailure != null) {
-            this.verifiedArtifacts_.delete(artifactPath);
+            this.verifiedArtifacts_.delete(update);
             throw new Error(`Update artifact changed after verification: ${verificationFailure}`);
         }
 
@@ -237,18 +254,19 @@ export class Updater extends EventEmitter<UpdaterEvents> {
         const stagingDirectory = await mkdtemp(path.join(path.dirname(artifactPath), '.install-'));
         await chmod(stagingDirectory, 0o700).catch(() => {});
         const stagedPath = path.join(stagingDirectory, path.basename(artifactPath));
+        let command: { file: string; args: string[] };
         try {
             await copyFile(artifactPath, stagedPath, fsConstants.COPYFILE_EXCL);
             if (!await verifyFile(stagedPath, update.asset.size, expectedHash)) {
                 throw new Error('Staged update artifact failed verification');
             }
+            command = await installerCommand(stagedPath, options.args || []);
         }
         catch (error) {
             await rm(stagingDirectory, { force: true, recursive: true }).catch(() => {});
             throw error;
         }
 
-        const command = await installerCommand(stagedPath, options.args || []);
         const child = spawn(command.file, command.args, {
             cwd: stagingDirectory,
             detached: true,
@@ -445,19 +463,6 @@ async function verifyFile(filePath: string, size: number, sha256: string): Promi
     return await fileVerificationFailure(filePath, size, sha256) == null;
 }
 
-async function fileVerificationFailure(filePath: string, size: number, sha256: string): Promise<string | null> {
-    const metadata = await lstat(filePath);
-    if (!metadata.isFile() || metadata.isSymbolicLink()) return 'artifact is not a regular file';
-    if (metadata.size !== size) return `expected ${size} bytes, received ${metadata.size}`;
-    const canonicalParent = await realpath(path.dirname(filePath));
-    const canonicalPath = path.join(canonicalParent, path.basename(filePath));
-    if (normalizePath(await realpath(filePath)) !== normalizePath(canonicalPath)) return 'artifact path resolves outside its download location';
-    const hash = createHash('sha256');
-    for await (const chunk of createReadStream(filePath)) hash.update(chunk);
-    const digest = hash.digest('hex');
-    return digest === sha256.toLowerCase() ? null : 'SHA-256 mismatch';
-}
-
 async function secureFetch(
     fetchSession: Session,
     input: string | URL,
@@ -530,7 +535,8 @@ async function installApplicationPayload(artifactPath: string, update: Downloade
     let alreadyExtracted = false;
     try {
         const completion = JSON.parse(await readFile(completionPath, 'utf8'));
-        alreadyExtracted = completion.sha256 === asset.sha256 && completion.version === update.version;
+        alreadyExtracted = completion.sha256 === asset.sha256 && completion.version === update.version &&
+            (completion.requiredRuntimeApi ?? 1) === asset.requiredRuntimeApi;
     }
     catch (_) { }
 
@@ -538,10 +544,11 @@ async function installApplicationPayload(artifactPath: string, update: Downloade
         const stagingDirectory = await mkdtemp(path.join(payloadsDirectory, '.extract-'));
         try {
             await extractApplicationPayload(artifactPath, stagingDirectory, asset.unpackedSize);
-            await validateApplicationPackage(stagingDirectory);
+            await validateApplicationPackage(stagingDirectory, update.version);
             await writeFile(path.join(stagingDirectory, payloadCompletionFileName), JSON.stringify({
                 sha256: asset.sha256,
                 version: update.version,
+                requiredRuntimeApi: asset.requiredRuntimeApi,
             }));
             await rm(finalDirectory, { force: true, recursive: true });
             await rename(stagingDirectory, finalDirectory);
@@ -551,11 +558,18 @@ async function installApplicationPayload(artifactPath: string, update: Downloade
             throw error;
         }
     }
+    else {
+        await validateApplicationPackage(finalDirectory, update.version);
+    }
 
     await mkdir(applicationPayloadRoot, { recursive: true });
     const activePath = path.join(applicationPayloadRoot, 'active.json');
     const temporaryActivePath = `${activePath}.${randomUUID()}.tmp`;
-    await writeFile(temporaryActivePath, JSON.stringify({ sha256: asset.sha256, version: update.version }), { flag: 'wx' });
+    await writeFile(temporaryActivePath, JSON.stringify({
+        sha256: asset.sha256,
+        version: update.version,
+        requiredRuntimeApi: asset.requiredRuntimeApi,
+    }), { flag: 'wx' });
     await rename(temporaryActivePath, activePath);
 }
 
@@ -612,7 +626,7 @@ function safeArchivePath(value: string): string {
     return segments.join('/');
 }
 
-async function validateApplicationPackage(directory: string): Promise<void> {
+async function validateApplicationPackage(directory: string, version: string): Promise<void> {
     let packageJSON: any;
     try {
         packageJSON = JSON.parse(await readFile(path.join(directory, 'package.json'), 'utf8'));
@@ -625,4 +639,9 @@ async function validateApplicationPackage(directory: string): Promise<void> {
         (packageJSON.main !== undefined && typeof packageJSON.main !== 'string')) {
         throw new Error('Application payload package.json has an invalid shape');
     }
+    if (typeof packageJSON.version !== 'string' || semver.valid(packageJSON.version) == null ||
+        !semver.eq(packageJSON.version, version)) {
+        throw new Error('Application payload package.json version does not match the update manifest');
+    }
+    validateApplicationEntry(directory);
 }

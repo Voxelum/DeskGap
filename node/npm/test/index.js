@@ -4,6 +4,8 @@ const fs = require('fs');
 
 app.once('ready', () => {
 	console.log('index.js: DeskGap app ready.');
-	assert.strictEqual(fs.readFileSync(process.env['DESKGAP_NPM_TEST_VERSION_FILE'], 'utf8'), process.versions.deskgap)
+	const versionFile = process.env['DESKGAP_NPM_TEST_VERSION_FILE'];
+	assert.ok(versionFile, 'DESKGAP_NPM_TEST_VERSION_FILE is required');
+	assert.strictEqual(fs.readFileSync(versionFile, 'utf8').trim(), process.versions.deskgap)
 	app.exit();
 });

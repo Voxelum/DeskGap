@@ -55,5 +55,6 @@ if [[ "$OSTYPE" != "linux-gnu" ]] && [[ "$OSTYPE" != "darwin"* ]]; then
     "$appDirectory" \
     "dist/DeskGap-${version}-${platform}.exe" \
     "$version"
+  cp "Release/DeskGapBootstrap.exe" "dist/DeskGapBootstrap-v${version}-${platform}.exe"
   rm -rf "dist/DeskGapClickRuntime"
 fi

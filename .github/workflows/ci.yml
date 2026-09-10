@@ -4,11 +4,16 @@ on:
   push:
     branches: [master, webview2]
   pull_request:
-    branches: [master]
+    branches: [master, webview2]
   workflow_dispatch:
     inputs:
       publish:
-        description: Create a GitHub release and publish the npm package
+        description: Create an immutable GitHub binary release
+        required: true
+        type: boolean
+        default: false
+      publish_npm:
+        description: Also publish to npm after the GitHub release succeeds
         required: true
         type: boolean
         default: false
@@ -30,7 +35,7 @@ jobs:
         include:
           - os: ubuntu-24.04
             platform: linux-x64
-          - os: windows-2025
+          - os: windows-2022
             platform: win32-x64
           - os: macos-15-intel
             platform: darwin-x64
@@ -52,6 +57,12 @@ jobs:
       - name: Build
         shell: bash
         run: bash node/scripts/build.sh
+      - name: Test Windows executable trust and bootstrap updates
+        if: runner.os == 'Windows'
+        env:
+          DESKGAP_BOOTSTRAP_TEST_EXE: ${{ github.workspace }}/dist_build/Release/DeskGapBootstrap.exe
+          DESKGAP_NATIVE_TEST_EXE: ${{ github.workspace }}/dist_build/Release/DeskGap/DeskGap.exe
+        run: node --test node/test/unit/windows-executable-native.js node/test/unit/bootstrap-persistence.js
       - name: Test DeskGap
         if: runner.os != 'Linux'
         run: node node/test/start.js "${{ github.workspace }}/dist_build/dist"
@@ -115,7 +126,7 @@ jobs:
         include:
           - os: ubuntu-24.04
             platform: linux-x64
-          - os: windows-2025
+          - os: windows-2022
             platform: win32-x64
           - os: macos-15-intel
             platform: darwin-x64
@@ -156,7 +167,7 @@ jobs:
         run: xvfb-run --auto-servernum bash node/scripts/test-npm.sh
 
   publish:
-    name: Publish release
+    name: Publish GitHub binaries
     if: github.event_name == 'workflow_dispatch' && inputs.publish
     needs: test-package
     runs-on: ubuntu-24.04
@@ -166,46 +177,61 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: npm-package
-          path: artifacts
-      - uses: actions/download-artifact@v4
-        with:
           name: release-binaries
           path: dist_zips
+      - name: Verify release checksums
+        working-directory: dist_zips
+        run: sha256sum --check SHA256SUMS
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NPM_TAG: ${{ inputs.npm_tag }}
+        run: |
+          version="$(tr -d '\r\n' < node/VERSION)"
+          prerelease_flag=()
+          if [[ "$version" == *-* || "$NPM_TAG" != "latest" ]]; then prerelease_flag=(--prerelease --latest=false); fi
+          if gh release view "v${version}" >/dev/null 2>&1; then
+            echo "Release v${version} already exists; increment node/VERSION instead of replacing binaries."
+            exit 1
+          fi
+          gh release create "v${version}" dist_zips/* \
+            --target "${GITHUB_SHA}" \
+            --title "v${version}" \
+            --notes-file node/WHATS_NEW.md \
+            "${prerelease_flag[@]}"
+
+  publish-npm:
+    name: Publish npm package
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && inputs.publish_npm
+    needs: publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-package
+          path: artifacts
       - name: Publish npm package
         env:
           DESKGAP_AP_NPM_TAG: ${{ inputs.npm_tag }}
           DESKGAP_NPM_TARBALL: ${{ github.workspace }}/artifacts/npm.tgz
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: bash node/scripts/publish-release.sh
-      - name: Create or update GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          version=$(<node/VERSION)
-          prerelease_flag=()
-          if [[ "${{ inputs.npm_tag }}" != "latest" ]]; then prerelease_flag=(--prerelease); fi
-          if gh release view "v${version}" >/dev/null 2>&1; then
-            gh release upload "v${version}" dist_zips/* artifacts/npm.tgz --clobber
-          else
-            gh release create "v${version}" dist_zips/* artifacts/npm.tgz \
-              --target "${GITHUB_SHA}" \
-              --title "v${version}" \
-              --notes-file node/WHATS_NEW.md \
-              "${prerelease_flag[@]}"
-          fi
 
   verify-published:
     name: Verify published package (${{ matrix.platform }})
-    if: github.event_name == 'workflow_dispatch' && inputs.publish
-    needs: publish
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && inputs.publish_npm
+    needs: publish-npm
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-24.04
             platform: linux-x64
-          - os: windows-2025
+          - os: windows-2022
             platform: win32-x64
           - os: macos-15-intel
             platform: darwin-x64
@@ -225,12 +251,13 @@ jobs:
         if: runner.os != 'Linux'
         shell: bash
         env:
+          NPM_TAG: ${{ inputs.npm_tag }}
           DESKGAP_NPM_TEST_INSTALL_WHAT: deskgap@${{ inputs.npm_tag }}
           DESKGAP_NPM_TEST_VERSION_FILE: ${{ github.workspace }}/node/VERSION
         run: |
           version=$(<node/VERSION)
           for attempt in {1..12}; do
-            published=$(npm view "deskgap@${{ inputs.npm_tag }}" version 2>/dev/null || true)
+            published=$(npm view "deskgap@$NPM_TAG" version 2>/dev/null || true)
             if [[ "$published" == "$version" ]]; then break; fi
             if [[ "$attempt" == 12 ]]; then echo "npm tag did not resolve to $version"; exit 1; fi
             sleep 10
@@ -239,12 +266,13 @@ jobs:
       - name: Verify published npm package on Xvfb
         if: runner.os == 'Linux'
         env:
+          NPM_TAG: ${{ inputs.npm_tag }}
           DESKGAP_NPM_TEST_INSTALL_WHAT: deskgap@${{ inputs.npm_tag }}
           DESKGAP_NPM_TEST_VERSION_FILE: ${{ github.workspace }}/node/VERSION
         run: |
           version=$(<node/VERSION)
           for attempt in {1..12}; do
-            published=$(npm view "deskgap@${{ inputs.npm_tag }}" version 2>/dev/null || true)
+            published=$(npm view "deskgap@$NPM_TAG" version 2>/dev/null || true)
             if [[ "$published" == "$version" ]]; then break; fi
             if [[ "$attempt" == 12 ]]; then echo "npm tag did not resolve to $version"; exit 1; fi
             sleep 10

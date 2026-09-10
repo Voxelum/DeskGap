@@ -1,6 +1,6 @@
 import { chmod, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { appendFile, createTarZstd, fileManifest } from './archive.mjs';
+import { appendFile, createTarZstd, fileManifest, versionedApplicationPackage } from './archive.mjs';
 
 const [bootstrapArgument, runtimeDirectoryArgument, applicationDirectoryArgument, outputArgument, versionArgument, entryArgument = 'DeskGap.exe'] = process.argv.slice(2);
 if (!bootstrapArgument || !runtimeDirectoryArgument || !applicationDirectoryArgument || !outputArgument || !versionArgument) {
@@ -11,11 +11,13 @@ const bootstrapPath = path.resolve(bootstrapArgument);
 const runtimeDirectory = path.resolve(runtimeDirectoryArgument);
 const applicationDirectory = path.resolve(applicationDirectoryArgument);
 const outputPath = path.resolve(outputArgument);
+await assertUnsignedBootstrap(bootstrapPath);
 const packageJSON = JSON.parse(await readFile(path.join(applicationDirectory, 'package.json'), 'utf8'));
 const appName = packageJSON.productName || packageJSON.name;
 if (!safeComponent(appName)) throw new Error('Application productName or name is not safe for local installation');
 if (!safeRelativePath(entryArgument)) throw new Error('Runtime entry path is unsafe');
 if (!/^[0-9A-Za-z.+_-]+$/.test(versionArgument)) throw new Error('Application version contains unsupported characters');
+const applicationPackage = versionedApplicationPackage(packageJSON, versionArgument);
 
 await mkdir(path.dirname(outputPath), { recursive: true });
 const runtimeArchivePath = `${outputPath}.${process.pid}.runtime.tar.zst`;
@@ -23,12 +25,12 @@ const applicationArchivePath = `${outputPath}.${process.pid}.application.tar.zst
 const temporaryOutputPath = `${outputPath}.${process.pid}.tmp`;
 
 try {
-    const identity = Buffer.from(`${JSON.stringify({ name: packageJSON.name, productName: appName })}\n`);
+    const identity = Buffer.from(`${JSON.stringify({ name: packageJSON.name, productName: appName, version: versionArgument })}\n`);
     const runtime = await createTarZstd(runtimeDirectory, runtimeArchivePath, 10, [{
         data: identity,
         name: 'resources/app-identity.json',
     }]);
-    const application = await createTarZstd(applicationDirectory, applicationArchivePath);
+    const application = await createTarZstd(applicationDirectory, applicationArchivePath, 10, [applicationPackage]);
     if (application.entries.some(entry => entry.name.toLowerCase() === '.deskgap-payload.json')) {
         throw new Error('Application payload cannot contain the reserved .deskgap-payload.json marker');
     }
@@ -111,4 +113,37 @@ function safeComponent(value) {
 function safeRelativePath(value) {
     if (typeof value !== 'string' || value === '' || value.includes('\\') || value.startsWith('/')) return false;
     return value.split('/').every(safeComponent);
+}
+
+async function assertUnsignedBootstrap(filePath) {
+    const file = await open(filePath, 'r');
+    try {
+        const dos = Buffer.alloc(64);
+        const { bytesRead } = await file.read(dos, 0, dos.length, 0);
+        if (bytesRead < 2 || dos.readUInt16LE(0) !== 0x5a4d) return;
+        if (bytesRead !== dos.length) throw new Error('Bootstrap PE header is truncated');
+        const peOffset = dos.readUInt32LE(0x3c);
+        const pe = Buffer.alloc(24);
+        if (peOffset < 64 || (await file.read(pe, 0, pe.length, peOffset)).bytesRead !== pe.length ||
+            pe.readUInt32LE(0) !== 0x4550) {
+            throw new Error('Bootstrap PE header is invalid');
+        }
+        const optional = Buffer.alloc(pe.readUInt16LE(20));
+        if (optional.length < 2 ||
+            (await file.read(optional, 0, optional.length, peOffset + pe.length)).bytesRead !== optional.length) {
+            throw new Error('Bootstrap optional PE header is truncated');
+        }
+        const magic = optional.readUInt16LE(0);
+        const directories = magic === 0x20b ? 112 : magic === 0x10b ? 96 : 0;
+        if (directories === 0 || optional.length < directories) throw new Error('Bootstrap optional PE header is invalid');
+        if (optional.readUInt32LE(directories - 4) <= 4) return;
+        const security = directories + 4 * 8;
+        if (optional.length < security + 8) throw new Error('Bootstrap SECURITY directory is truncated');
+        if (optional.readUInt32LE(security) !== 0 || optional.readUInt32LE(security + 4) !== 0) {
+            throw new Error('Bootstrap must be unsigned; assemble the complete click-to-run EXE before Authenticode signing');
+        }
+    }
+    finally {
+        await file.close();
+    }
 }

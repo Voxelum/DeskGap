@@ -551,6 +551,12 @@ Promise settles.
 
 ## Application Updater
 
+Windows applications distributed as a single signed EXE can use
+`windowsExecutable` with their existing GitHub release and Authenticode signing
+process. They do not need a separately signed JSON manifest or another private
+key. The portable manifest-based `Updater` described below remains an optional
+alternative for applications that choose that distribution format.
+
 DeskGap provides an application-level `Updater` rather than copying
 `electron-updater` packaging assumptions. `checkForUpdates(manifestURL)` reads a
 bounded JSON manifest and requires an application-configured Ed25519 public
@@ -565,9 +571,13 @@ allowlist. `downloadUpdate()` accepts only frozen metadata returned by the same
 Updater after signature verification. It streams to an exclusive random
 partial file, reports progress, propagates `AbortSignal`, enforces a four GiB
 maximum, verifies size and SHA-256, and atomically publishes the artifact.
-Concurrent writes to one artifact path are rejected.
+Chunked responses do not need a `Content-Length` header: the signed manifest
+still supplies the exact size. Concurrent writes to one artifact path are
+rejected, and failed directory creation or cancelled downloads can be retried.
 
-`install()` accepts only artifacts downloaded and verified by that Updater.
+`install()` accepts only the original, frozen `DownloadedUpdate` object returned
+by that Updater, not copied or deserialized metadata. Keep this object in the
+main process and expose only progress and release information to renderers.
 Legacy assets and assets with `type: "runtime"` are verified again, copied to a
 private staging directory, and launched through a fixed platform installer
 mapping: Windows EXE/MSI, macOS PKG/DMG through `/usr/bin/open`, Linux
@@ -585,6 +595,77 @@ completion marker, and atomically updates `active.json`. Startup uses that
 payload only when both records are complete and otherwise falls back to the
 embedded `resources/app`. `quitAndInstall()` relaunches after activating an
 application payload; `install()` leaves activation for the next launch.
+Windows click-to-run launchers keep verified full-bundle records separately
+from `active.json`. Reopening an older launcher preserves an app-only update
+and selects the newest fully verified installed runtime bundle. Startup can
+recover an invalid active payload to the running runtime's bundled payload,
+and never runs a payload requiring a newer runtime API.
+
+For a full Windows click-to-run update, the application may pass
+`args: ["--deskgap-wait-for-pid=" + process.pid]` to `install()`. The bootstrap
+waits for that process to exit before installing or launching, then removes
+the flag from application arguments. After successful installer spawn, the
+application can flush its data and quit without racing a second instance.
+This flag belongs only to DeskGap's bootstrap, not arbitrary EXE/MSI installers.
+Launchers built before this behavior cannot be retroactively fixed.
+The payload's `package.json` version must match the signed release version.
+Installation also resolves the application's entry without executing it and
+requires a regular file inside the payload directory. Missing or external
+entries, including damaged previously extracted payloads, fail before
+`active.json` changes rather than reporting a successful update and silently
+starting the old application.
+Among compatible application assets, an exact platform/architecture match
+takes priority over `any`; if no payload supports the running runtime API,
+the updater selects a matching full runtime installer instead.
+
+### GitHub Releases integration
+
+Applications can publish an immutable signed manifest and its assets together
+in a GitHub release. The application discovers its release/channel, then passes
+the manifest URL to `checkForUpdates()`. DeskGap does not consume Electron's
+`latest.yml`, blockmaps, or ASAR updates.
+
+For GitHub-hosted manifests and binaries, configure the exact redirect origins
+`https://github.com` and `https://release-assets.githubusercontent.com` in
+`allowedOrigins`. Do not accept an unsigned GitHub asset listing as update
+authorization: the manifest still requires the application's trusted Ed25519
+key and signed asset hashes. Keep the private key in release secrets and bake
+only the public key into the application.
+
+### Windows single-EXE updates
+
+XMCL adds `xmcl-deskgap-<version>-win32-x64.exe` to its ordinary release alongside
+Electron assets and signs it through SignPath. It does not publish separate
+`deskgap-v<version>` tags, update manifests, or application-only payloads.
+A DeskGap runtime ZIP is build input, not an installable application update.
+Combine the raw bootstrap, runtime, and application with
+`package-click-to-run.mjs`, then sign the complete EXE and calculate its final
+checksum. Do not append payloads or modify the executable after signing.
+
+The application owns release/channel discovery, downloads, progress, and
+cancellation. Call `windowsExecutable.verifySignature(path, publisherNames)`
+before marking the download ready. Windows validates Authenticode trust and the
+signed bytes, then checks the signer's full X.500 subject against the application's
+fixed `publisherNames` allowlist. These are complete Windows certificate subjects,
+not common names or values taken from the downloaded release. Unsigned files,
+untrusted certificates, unexpected publishers, and non-Windows runtimes fail
+explicitly.
+The full subject must exactly match Windows' case-sensitive reverse-X.500
+display form, including attribute aliases, spacing, and quoting (the usual
+`SignerCertificate.Subject` value). Verification uses Windows' timestamp-aware
+trust policy with revocation checking; an unavailable trust decision is not
+silently treated as valid.
+
+`windowsExecutable.install(path, { publisherNames, sha256, args, quit: false })`
+copies the EXE into a unique staging directory, checks the optional SHA-256
+recorded at download completion, verifies its signature again, and launches it
+without a shell. SHA-256 detects changes to a ready download; it does not replace
+publisher verification. The Promise resolves on successful process creation,
+not completed installation. Pass `--deskgap-wait-for-pid=<current PID>` for a
+DeskGap click-to-run executable. After successful spawn, XMCL disposes and quits
+normally without releasing its single-instance lock early or relaunching the old
+runtime. Installation failures must not quit the app. Successful staging files
+remain available to the detached installer; failed attempts are cleaned up.
 
 ### Windows App Installer
 
@@ -608,6 +689,9 @@ deterministic Zstd level 10 payload and adjacent `.metadata.json` containing the
 asset fields for the signed manifest. The standard Node build emits the same
 artifact next to the packaged runtime while retaining the embedded app as the
 recovery copy.
+An explicit version is written into the archived `package.json`, without
+modifying the source directory, so package metadata and signed update metadata
+cannot accidentally disagree.
 
 ### Application Storage
 
@@ -685,7 +769,7 @@ signed executable.
 | Credential storage | Account secrets; Electron API compatibility is not required | Asynchronous keytar-style `credentials` backed by Credential Manager/DPAPI, Keychain, and libsecret Secret Service with explicit failures | Port the launcher safeStorage adapter and validate Keychain/Secret Service prompts in platform CI | P1 |
 | Power | Current battery-power state; future suspend/resume integration | Public battery state plus `suspend`, `resume`, `on-ac`, and `on-battery` events backed by Win32, IOKit, UPower, and logind | Validate event delivery across platforms | P1 |
 | Chromium tooling | Debugger protocol, tracing, and extensions | DevTools can be enabled, but there is no debugger/tracing API | Keep optional and platform-specific; these are not core compatibility promises | P3 |
-| Updater integration | `electron-updater` check, download, cancellation, install, and relaunch flow | Signed application-level Updater with semver selection, platform assets, streaming progress/cancellation, size/hash checks, artifact provenance, staged installer launch, and explicit quit-and-install | Adapt launcher release metadata and installer packaging to the signed manifest; validate macOS/Linux handoff in platform CI | P2 |
+| Updater integration | `electron-updater` check, download, cancellation, install, and relaunch flow | Windows single-EXE Authenticode verification and PID-aware handoff; XMCL uses its ordinary release and SignPath process. Optional portable signed-manifest Updater remains available | Register the EXE artifact with the existing SignPath policy and exercise a genuinely signed release; macOS/Linux handoff still needs platform integration | P2 |
 | Windows App Installer | Optional `@xmcl/windows-utils` package identity, update availability, and App Installer deployment | Built-in optional `windowsAppInstaller` identity/update/install API with progress, cancellation, deployment flags, and structured HRESULT failures | Validate identity, update availability, and an actual signed `.appinstaller` deployment from an MSIX-packaged CI fixture | P2 |
 
 ## Delivery Order
@@ -707,8 +791,8 @@ signed executable.
   application lifecycle, tray aliases, notifications, credential storage,
   and power APIs. These are baseline desktop APIs, not optional compatibility
   extras.
-6. Port application release pipelines to the signed updater manifest and
-  validate package-manager handoff. Keep Chromium debugger, tracing,
+6. Reuse application release pipelines and publisher signing for single-EXE
+  updates, and validate installer handoff. Keep Chromium debugger, tracing,
   HTTP/HTTPS interception, and extension support optional and engine-specific.
 
 The first compatibility test application should exercise native multi-file

@@ -23,13 +23,24 @@ module.exports = (distPath, entryPath, args) => {
         }
     });
 
+    const signalHandlers = new Map();
     for (const signal of ['SIGINT', 'SIGTERM']) {
-        process.on(signal, () => {
+        const handler = () => {
             if (!deskgapProcess.killed) {
                 deskgapProcess.kill(signal);
             }
-        })
+        };
+        signalHandlers.set(signal, handler);
+        process.on(signal, handler);
     }
 
-    deskgapProcess.once('close', (code) => process.exit(code));
+    deskgapProcess.once('error', error => {
+        console.error(error);
+        process.exitCode = 1;
+    });
+    deskgapProcess.once('close', code => {
+        for (const [signal, handler] of signalHandlers) process.removeListener(signal, handler);
+        process.exitCode = code == null ? 1 : code;
+    });
+    return deskgapProcess;
 };

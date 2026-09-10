@@ -387,12 +387,11 @@ namespace DeskGap {
             g_object_set_data(G_OBJECT(impl_->gtkWebView), "deskgap-webview", this);
         }
 
-        if (session.userAgent.has_value()) {
-            webkit_web_view_set_custom_user_agent(impl_->gtkWebView, session.userAgent->c_str());
-        }
-
         {
             WebKitSettings* settings = webkit_web_view_get_settings(impl_->gtkWebView);
+            if (session.userAgent.has_value()) {
+                webkit_settings_set_user_agent(settings, session.userAgent->c_str());
+            }
             webkit_settings_set_javascript_can_access_clipboard(settings, true);
         }
 

@@ -12,6 +12,7 @@ namespace DeskGap {
         friend class BrowserWindowWrap;
         std::unique_ptr<WebView> webview_;
         void LoadLocalFile(const Napi::CallbackInfo& info);
+        Napi::Value GetLocalFileOrigin(const Napi::CallbackInfo& info);
         void LoadRequest(const Napi::CallbackInfo& info);
         void ExecuteJavaScript(const Napi::CallbackInfo& info);
         void Reload(const Napi::CallbackInfo&);

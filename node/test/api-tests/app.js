@@ -1,4 +1,4 @@
-const { app } = require('deskgap');
+const { app, BrowserWindow } = require('deskgap');
 const assert = require('node:assert/strict');
 const { describe, it } = require('node:test');
 const { spawnDeskGapAppAsync } = require('../utils');
@@ -18,7 +18,7 @@ describe('process', () => {
     });
     describe('process.versions.deskgap', () => {
         it('returns the version of DeskGap', () => {
-            const versionFromSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'VERSION'), 'utf8');
+            const versionFromSource = fs.readFileSync(path.resolve(__dirname, '..', '..', 'VERSION'), 'utf8').trim();
             assert.equal(process.versions.deskgap, versionFromSource);
         })
     });
@@ -41,7 +41,7 @@ describe('app module', () => {
     });
 
     describe('app.getName()', () => {
-        it('returns the name field of package.json if productName does not exists', () => {
+        it('returns the productName field of the development package.json', () => {
             assert.equal(app.getName(), 'DeskGap Test');
         });
         it('returns the productName field of package.json if both name and productName exists', async () => {
@@ -55,7 +55,7 @@ describe('app module', () => {
             assert.equal(typeof app.getSystemLocale(), 'string');
             assert.equal(app.getSystemLocale().length > 0, true);
             assert.equal(path.isAbsolute(app.getPath('exe')), true);
-            assert.equal(app.getPath('logs'), path.join(app.getPath('userData'), 'logs'));
+            assert.equal(app.getPath('logs'), path.join(app.getPath('localData'), 'Logs'));
             assert.doesNotThrow(() => app.setAppUserModelId('com.deskgap.test'));
         });
     });

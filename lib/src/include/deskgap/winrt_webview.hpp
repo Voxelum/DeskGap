@@ -19,6 +19,7 @@ namespace DeskGap {
         static bool IsAvailable();
         WinRTWebView(EventCallbacks&&, const std::string& preloadScriptString, SessionOptions&&);
         virtual void LoadLocalFile(const std::string& path, const std::string& fragment, const std::string& applicationHost) override;
+        virtual std::string GetLocalFileOrigin() override;
         virtual void LoadRequest(
             const std::string& method,
             const std::string& urlString,

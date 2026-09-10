@@ -27,6 +27,18 @@ describe('BrowserWindow#webView', () => {
             const suspended = await win.webView.trySuspend();
             assert.equal(suspended, win.webView.engine === 'webview2');
             win.webView.resume();
+            if (win.webView.engine === 'webview2') {
+                win.show();
+                assert.equal(await win.webView.trySuspend(), false);
+                win.hide();
+                assert.equal(await win.webView.trySuspend(), true);
+                win.webView.resume();
+                win.show();
+                win.minimize();
+                assert.equal(await win.webView.trySuspend(), true);
+                win.restore();
+                assert.equal(await win.webView.trySuspend(), false);
+            }
         }, true);
     });
 

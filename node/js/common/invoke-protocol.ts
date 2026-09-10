@@ -1,3 +1,5 @@
+import { encodeUTF8, decodeUTF8 } from './utf8';
+
 export const invokeServiceName = 'deskgap.invoke';
 export const maximumInvokeBodyBytes = 1024 * 1024;
 
@@ -30,7 +32,7 @@ export function serializeInvokeValue(value: unknown): string {
     try { serialized = JSON.stringify(value); }
     catch (_) { throw new TypeError('Invoke values must be JSON-compatible'); }
     if (serialized == null) throw new TypeError('Invoke values must be JSON-compatible');
-    const size = new TextEncoder().encode(serialized).byteLength;
+    const size = encodeUTF8(serialized).byteLength;
     if (size > maximumInvokeBodyBytes) throw new RangeError('Invoke payload exceeds the 1 MiB limit');
     return serialized;
 }
@@ -84,6 +86,6 @@ export async function readInvokeJSON(message: Request | Response): Promise<any> 
         bytes.set(chunk, offset);
         offset += chunk.byteLength;
     }
-    try { return JSON.parse(new TextDecoder().decode(bytes)); }
+    try { return JSON.parse(decodeUTF8(bytes)); }
     catch (_) { throw new Error('Invoke payload is not valid JSON'); }
 }

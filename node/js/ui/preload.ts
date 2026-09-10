@@ -1,3 +1,4 @@
+import './compatibility'
 import { internalDeskGap } from './bootstrap'
 import {
     decodeChannelDataFrame,
@@ -8,6 +9,8 @@ import {
     UnversionedTransportFrame,
 } from '../common/transport-protocol'
 import { TransportChannel } from '../common/transport-channel'
+import { parseServiceURL } from '../common/service-protocol'
+import { encodeUTF8 } from '../common/utf8'
 import {
     InvokeFailure,
     invokeServiceName,
@@ -19,7 +22,6 @@ import {
 let loopbackSocket: WebSocket | null = null;
 let transportSocket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-const textEncoder = new TextEncoder();
 let transportBootstrapPromise: Promise<TransportBootstrap> | null = null;
 let nextChannelId = 2;
 const channels = new Map<number, TransportChannel>();
@@ -289,20 +291,14 @@ export class DeskGapInBroswer extends EventTarget {
     async fetch(input: RequestInfo, init?: RequestInit): Promise<Response> {
         const sourceBody = init?.body;
         const request = new Request(input, init);
-        const serviceUrl = new URL(request.url);
-        if (serviceUrl.protocol !== 'service:') {
-            throw new TypeError('DeskGap service fetch only accepts service: URLs');
-        }
-        if (serviceUrl.hostname === '' || serviceUrl.username !== '' || serviceUrl.password !== '' || serviceUrl.port !== '') {
-            throw new TypeError('DeskGap service URLs require a service name without credentials or a port');
-        }
+        const serviceUrl = parseServiceURL(request.url);
         if (transportBootstrapPromise == null) {
             throw new Error('DeskGap loopback transport is unavailable');
         }
         const bootstrap = await transportBootstrapPromise;
         const headers = new Headers(request.headers);
         headers.set('Authorization', `Bearer ${bootstrap.token}`);
-        const serviceName = encodeURIComponent(serviceUrl.hostname);
+        const serviceName = encodeURIComponent(serviceUrl.serviceName);
         const transportOrigin = new URL(bootstrap.socketUrl.replace(/^ws/, 'http')).origin;
         const serviceRequestUrl = `${transportOrigin}/__deskgap/service/${serviceName}${serviceUrl.pathname}${serviceUrl.search}`;
         const requestInit: RequestInit & { duplex?: 'half' } = {
@@ -348,7 +344,7 @@ function createChannelEndpoint(socket: WebSocket, channelId: number): TransportC
 function sendControlFrame(socket: WebSocket, frame: UnversionedTransportFrame): void {
     if (socket.readyState !== WebSocket.OPEN) throw new Error('Transport is disconnected');
     const serialized = encodeTransportFrame(frame);
-    if (socket.bufferedAmount + textEncoder.encode(serialized).byteLength > maximumTransportFrameBytes) {
+    if (socket.bufferedAmount + encodeUTF8(serialized).byteLength > maximumTransportFrameBytes) {
         throw new Error('DeskGap transport send queue is full');
     }
     socket.send(serialized);

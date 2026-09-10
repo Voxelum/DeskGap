@@ -4,6 +4,9 @@ import { AddressInfo } from 'net';
 import { Readable } from 'stream';
 import { WebSocket, WebSocketServer } from 'ws';
 import { decodeTransportFrame, encodeTransportFrame, maximumTransportFrameBytes } from '../../common/transport-protocol';
+import { isValidServiceName } from '../../common/service-protocol';
+
+export { isValidServiceName } from '../../common/service-protocol';
 
 const bootstrapPath = '/__deskgap/bootstrap';
 const socketPath = '/__deskgap/socket';
@@ -53,10 +56,6 @@ export interface TransportRequestContext {
 }
 
 type ServiceRequestHandler = (request: Request, context: TransportRequestContext) => Response | null | Promise<Response | null>;
-
-export function isValidServiceName(serviceName: string): boolean {
-    return /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(serviceName);
-}
 
 export class LoopbackTransport {
     private server_: Server | null = null;

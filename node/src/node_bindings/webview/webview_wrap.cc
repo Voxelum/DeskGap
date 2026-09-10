@@ -50,6 +50,7 @@ namespace DeskGap {
             StaticMethod("getWebview2Version", &WebViewWrap::GetWebview2Version),
         #endif
             InstanceMethod("loadLocalFile", &WebViewWrap::LoadLocalFile),
+            InstanceMethod("getLocalFileOrigin", &WebViewWrap::GetLocalFileOrigin),
             InstanceMethod("loadRequest", &WebViewWrap::LoadRequest),
             InstanceMethod("executeJavaScript", &WebViewWrap::ExecuteJavaScript),
             InstanceMethod("reload", &WebViewWrap::Reload),
@@ -213,6 +214,12 @@ namespace DeskGap {
         return Napi::String::New(info.Env(), version);
     }
     #endif
+
+    Napi::Value WebViewWrap::GetLocalFileOrigin(const Napi::CallbackInfo& info) {
+        std::string origin;
+        UISync(info.Env(), [this, &origin]() { origin = this->webview_->GetLocalFileOrigin(); });
+        return Napi::String::New(info.Env(), origin);
+    }
 
     void WebViewWrap::LoadLocalFile(const Napi::CallbackInfo& info) {
         UISyncDelayable(info.Env(), [

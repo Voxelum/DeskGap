@@ -106,28 +106,34 @@ describe('webViews', () => {
             });
         });
 
-        it('should change the engine of webviews created afterwards to WebView2 if "webview2" is passed', async (testContext) => {
+        it('should change the engine of webviews created afterwards to WebView2 if "webview2" is passed', { timeout: 15000 }, async (testContext) => {
             if (!webViews.isEngineAvailable('webview2')) return testContext.skip();
             webViews.setDefaultEngine('webview2');
             const window = new BrowserWindow({ show: false });
+            testContext.after(() => { if (!window.isDestroyed()) window.destroy(); });
             const userAgent = new Promise(resolve => {
                 window.webView.handle('test.user-agent', (_context, value) => resolve(value));
             });
             window.loadFile(path.resolve(__dirname, '..', 'fixtures', 'files', 'web-view-ua-service.html'));
-            assert.match(await userAgent, /Edg\//);
+            const value = await userAgent;
+            testContext.diagnostic(`webview2 userAgent: ${value}`);
+            assert.match(value, /Edg\//);
             window.destroy();
         });
 
-        it('should change the engine of webviews created afterwards to a WebKit-like one if "winrt" is passed', async (testContext) => {
+        it('should change the engine of webviews created afterwards to a WebKit-like one if "winrt" is passed', { timeout: 15000 }, async (testContext) => {
             if (!webViews.isEngineAvailable('winrt')) return testContext.skip();
 
             webViews.setDefaultEngine('winrt');
             const window = new BrowserWindow({ show: false });
+            testContext.after(() => { if (!window.isDestroyed()) window.destroy(); });
             const userAgent = new Promise(resolve => {
                 window.webView.handle('test.user-agent', (_context, value) => resolve(value));
             });
             window.loadFile(path.resolve(__dirname, '..', 'fixtures', 'files', 'web-view-ua-service.html'));
-            assert.match(await userAgent, /WebKit/);
+            const value = await userAgent;
+            testContext.diagnostic(`winrt userAgent: ${value}`);
+            assert.match(value, /WebKit/);
             window.destroy();
         });
         

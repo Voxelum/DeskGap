@@ -277,6 +277,12 @@ namespace DeskGap {
     }
 
 
+    std::string WinRTWebView::GetLocalFileOrigin() {
+        const Uri uri = winrtImpl_->webViewControl.BuildLocalStreamUri(LocalContentIdentifier, L"index.html");
+        const std::string url = winrt::to_string(uri.AbsoluteUri());
+        return url.substr(0, url.find('/', url.find("://") + 3));
+    }
+
     void WinRTWebView::LoadLocalFile(const std::string& path, const std::string& fragment, const std::string&) {
         winrtImpl_->PrepareScript();
         fs::path fsPath(path);

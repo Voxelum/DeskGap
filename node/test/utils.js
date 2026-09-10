@@ -27,8 +27,16 @@ const spawnDeskGapAsync = (entryPath, args) => {
     spawnedDeskGap.stderr.on('data', chunk => stderrBuffers.push(chunk));
 
     return new Promise((resolve, reject) => {
-        spawnedDeskGap.once('error', reject);
+        const timeout = setTimeout(() => {
+            spawnedDeskGap.kill();
+            reject(new Error(`DeskGap fixture timed out: ${entryPath}`));
+        }, 30000);
+        spawnedDeskGap.once('error', error => {
+            clearTimeout(timeout);
+            reject(error);
+        });
         spawnedDeskGap.once('close', (code, signal) => {
+            clearTimeout(timeout);
             const result = {
                 stdout: Buffer.concat(stdoutBuffers).toString('utf8'),
                 stderr: Buffer.concat(stderrBuffers).toString('utf8'),
@@ -38,11 +46,7 @@ const spawnDeskGapAsync = (entryPath, args) => {
                 reject(new DeskGapProcessError(result));
             }
             else {
-                resolve({
-                    stdout: Buffer.concat(stdoutBuffers).toString('utf8'),
-                    stderr: Buffer.concat(stderrBuffers).toString('utf8'),
-                    code, signal
-                });
+                resolve(result);
             }
         });
     });
@@ -84,20 +88,29 @@ const availableWindowsEngines = ['webview2', 'winrt'].filter(engine => webViews.
 const engines = process.platform === 'win32' ? availableWindowsEngines : [null];
 exports.withWebView = (it, description, func, loadsBlankPage = false) => {
     for (const engine of engines) {
-        it(description + (engine == null ? "": `@${engine}`), async (testContext) => {
+        it(description + (engine == null ? "": `@${engine}`), { timeout: 15000 }, async (testContext) => {
             const win = new BrowserWindow({
                 show: false,
                 webPreferences: { engine }
             });
-            if (loadsBlankPage) {
-                win.loadFile(path.resolve(__dirname, 'fixtures', 'files', 'blank.html'));
-                await once(win.webView, 'did-finish-load');
-            }
+            win.webView.on('console-message', event => {
+                if (event.level === 'warning' || event.level === 'error') {
+                    testContext.diagnostic(`${engine || 'webkit'} ${event.level}: ${event.message}`);
+                }
+            });
+            testContext.after(() => {
+                if (!win.isDestroyed()) win.destroy();
+            });
             try {
+                if (loadsBlankPage) {
+                    const loaded = once(win.webView, 'did-finish-load');
+                    win.loadFile(path.resolve(__dirname, 'fixtures', 'files', 'blank.html'));
+                    await loaded;
+                }
                 return await func(win, testContext);
             }
             finally {
-                win.destroy();
+                if (!win.isDestroyed()) win.destroy();
             }
         });
     }

@@ -39,6 +39,29 @@ test('shares one in-flight server start between windows', async () => {
     await transport.close();
 });
 
+test('binds WinRT bootstrap preflight to its exact native local-stream origin', async context => {
+    const transport = new LoopbackTransport();
+    context.after(() => transport.close());
+    const transportOrigin = await transport.start();
+    const pageOrigin = 'ms-local-stream://Microsoft.Win32WebViewHost_test_4465736b476170';
+    const issued = transport.issueWindowTicket(8, 1, pageOrigin);
+    for (const origin of [pageOrigin, 'null', 'ms-local-stream://another-host']) {
+        const response = await fetch(`${transportOrigin}/__deskgap/bootstrap`, {
+            method: 'OPTIONS',
+            headers: { Origin: origin, 'Access-Control-Request-Method': 'POST' },
+        });
+        assert.equal(response.status, origin === pageOrigin ? 204 : 403);
+        assert.equal(response.headers.get('access-control-allow-origin'), origin === pageOrigin ? pageOrigin : null);
+    }
+    const response = await fetch(`${transportOrigin}/__deskgap/bootstrap`, {
+        body: JSON.stringify({ ticket: issued.ticket }),
+        headers: { 'Content-Type': 'application/json', Origin: pageOrigin },
+        method: 'POST',
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('access-control-allow-origin'), pageOrigin);
+});
+
 test('exchanges a window ticket and authenticates one WebSocket', async () => {
     const transport = new LoopbackTransport();
     const transportOrigin = await transport.start();

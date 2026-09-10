@@ -145,6 +145,12 @@ namespace DeskGap {
             if (webviewController) check(webviewController->NotifyParentWindowPositionChanged());
         }
 
+        virtual void ParentWindowVisibilityChanged(bool visible) override {
+            if (webviewController) {
+                check(webviewController->put_IsVisible(visible));
+            }
+        }
+
         virtual void InitWithParent(HWND hWnd) override {
             containerWnd = hWnd;
             wil::com_ptr<CoreWebView2EnvironmentOptions> environmentOptions;
@@ -226,6 +232,7 @@ namespace DeskGap {
                                 this->webviewController->get_CoreWebView2(&webviewWindow);
                             }
                             if (!webviewWindow) return S_OK;
+                            ParentWindowVisibilityChanged(IsWindowVisible(containerWnd) && !IsIconic(containerWnd));
 
                             // Add a few settings for the webview
                             // The demo step is redundant since the
@@ -296,7 +303,7 @@ namespace DeskGap {
                                     BOOL isSuccess = FALSE;
                                     args->get_IsSuccess(&isSuccess);
                                     if (isSuccess) {
-                                        webviewController->put_IsVisible(true);
+                                        ParentWindowVisibilityChanged(IsWindowVisible(containerWnd) && !IsIconic(containerWnd));
                                         this->callbacks.didFinishLoad();
                                     }
                                     else {

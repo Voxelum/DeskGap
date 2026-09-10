@@ -158,6 +158,7 @@ declare class WebViewNativeBinding {
         backgroundColor: number | null,
     )
 
+    getLocalFileOrigin(): string
     loadLocalFile(path: string, fragment: string, applicationHost: string): void
     loadRequest(method: string, url: string, headers: Array<[string, string]>, body?: string): void
     setDevToolsEnabled(enabled: boolean): void

@@ -514,7 +514,7 @@ export class WebView extends EventEmitter<WebViewEvents> {
             if (this.isDestroyed() || navigationGeneration !== this.navigationGeneration_) return;
             const origin = this.engine_ === 'webview2'
                 ? `http://${applicationHost}`
-                : process.platform === 'win32' ? 'null' : `deskgap-local://${applicationHost}`;
+                : this.engine_ === 'winrt' ? this.native_.getLocalFileOrigin() : `deskgap-local://${applicationHost}`;
             const bootstrap = loopbackTransport.issueWindowTicket(this.id_, navigationGeneration, origin);
             const fragment = `__deskgap_transport=${encodeURIComponent(JSON.stringify(bootstrap))}`;
             this.native_.loadLocalFile(absolutePath, fragment, applicationHost);

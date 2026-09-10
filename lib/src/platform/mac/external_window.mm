@@ -58,26 +58,26 @@ DeskGap::ExternalWindow::Result DeskGap::ExternalWindow::TryMoveAndResize(
     ));
     CFTypeRef fullscreenValue = nullptr;
     bool wasFullscreen = false;
-    if (AXUIElementCopyAttributeValue(window, kAXFullScreenAttribute, &fullscreenValue) == kAXErrorSuccess) {
+    if (AXUIElementCopyAttributeValue(window, CFSTR("AXFullScreen"), &fullscreenValue) == kAXErrorSuccess) {
         CFReference fullscreen(fullscreenValue);
         if (fullscreen.Get() != nullptr && CFGetTypeID(fullscreen.Get()) == CFBooleanGetTypeID()) {
             wasFullscreen = CFBooleanGetValue(static_cast<CFBooleanRef>(fullscreen.Get()));
         }
     }
     if (wasFullscreen) {
-        AXUIElementSetAttributeValue(window, kAXFullScreenAttribute, kCFBooleanFalse);
+        AXUIElementSetAttributeValue(window, CFSTR("AXFullScreen"), kCFBooleanFalse);
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 
     CGPoint position { bounds.x, bounds.y };
     CGSize size { bounds.width, bounds.height };
-    CFReference positionValue(AXValueCreate(kAXValueCGPointType, &position));
-    CFReference sizeValue(AXValueCreate(kAXValueCGSizeType, &size));
+    CFReference positionValue(AXValueCreate(kAXValueTypeCGPoint, &position));
+    CFReference sizeValue(AXValueCreate(kAXValueTypeCGSize, &size));
     error = AXUIElementSetAttributeValue(window, kAXPositionAttribute, positionValue.Get());
     if (error == kAXErrorSuccess) error = AXUIElementSetAttributeValue(window, kAXSizeAttribute, sizeValue.Get());
     if (wasFullscreen) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        AXUIElementSetAttributeValue(window, kAXFullScreenAttribute, kCFBooleanTrue);
+        AXUIElementSetAttributeValue(window, CFSTR("AXFullScreen"), kCFBooleanTrue);
     }
     if (error != kAXErrorSuccess) return Failure(error, "Cannot move the external application window");
     return { Status::SUCCESS };

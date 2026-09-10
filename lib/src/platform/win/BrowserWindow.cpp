@@ -217,7 +217,12 @@ namespace DeskGap {
                             }
                             break;
                         }
+                        case WM_SHOWWINDOW: {
+                            browserWindow->impl_->webView.impl_->ParentWindowVisibilityChanged(wp != FALSE && !IsIconic(hwnd));
+                            break;
+                        }
                         case WM_SIZE: {
+                            browserWindow->impl_->webView.impl_->ParentWindowVisibilityChanged(IsWindowVisible(hwnd) && wp != SIZE_MINIMIZED);
                             if (wp != browserWindow->impl_->windowState) {
                                 WPARAM previousState = browserWindow->impl_->windowState;
                                 browserWindow->impl_->windowState = wp;

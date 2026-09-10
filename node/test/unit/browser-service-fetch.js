@@ -29,6 +29,7 @@ const bootstrap = {
 const originalFetch = global.fetch;
 const originalWebSocket = global.WebSocket;
 const originalWindow = global.window;
+const originalURL = global.URL;
 
 let serviceRequest;
 let serviceResponseFactory = null;
@@ -108,6 +109,7 @@ test.after(() => {
     global.fetch = originalFetch;
     global.WebSocket = originalWebSocket;
     global.window = originalWindow;
+    global.URL = originalURL;
     fs.rmSync(outputDirectory, { force: true, recursive: true });
 });
 
@@ -152,6 +154,26 @@ test('rejects ambiguous service authorities', async () => {
         global.window.deskgap.fetch('service://launcher:1234/path'),
         /without credentials or a port/,
     );
+    for (const input of ['service:///path', 'service://launcher%2fother/path', 'service://launcher\\other/path']) {
+        await assert.rejects(global.window.deskgap.fetch(input), TypeError);
+    }
+});
+
+test('routes service requests when the engine parses unknown schemes as opaque URLs', async () => {
+    global.URL = class extends originalURL {
+        get hostname() {
+            return this.protocol === 'service:' ? '' : super.hostname;
+        }
+    };
+    try {
+        await global.window.deskgap.fetch('service://deskgap.invoke/test.echo');
+        assert.equal(serviceRequest.input, 'http://127.0.0.1:45678/__deskgap/service/deskgap.invoke/test.echo');
+        await global.window.deskgap.fetch('service://127.1/path?value=1');
+        assert.equal(serviceRequest.input, 'http://127.0.0.1:45678/__deskgap/service/127.1/path?value=1');
+    }
+    finally {
+        global.URL = originalURL;
+    }
 });
 
 test('invokes a named handler over the authenticated service transport', async () => {

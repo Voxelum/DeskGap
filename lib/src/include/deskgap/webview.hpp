@@ -77,6 +77,7 @@ namespace DeskGap {
             const std::vector<HTTPHeader>& headers,
             const std::optional<std::string>& body
         ));
+        virtual std::string GetLocalFileOrigin() { return ""; }
         PURE_VIRTUAL_IF_WIN32(void Reload());
         PURE_VIRTUAL_IF_WIN32(void ResolveNavigationPolicy(uint64_t requestId, bool allow));
         PURE_VIRTUAL_IF_WIN32(void ResolveCustomProtocolRequest(

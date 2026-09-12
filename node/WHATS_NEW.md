@@ -18,8 +18,11 @@ need implementation before those platforms can pass the release pipeline.
 
 This is a preview runtime, not a claim of complete XMCL/Electron parity.
 The v0.3.0-beta2 tag and npm version are historical releases and are not updated.
-This prerelease publishes GitHub binaries and an SDK tarball, not a new npm
-registry version.
+The GitHub prerelease originally published binaries and an SDK tarball without
+an npm registry version. The follow-up npm SDK is named `@ci010/deskgap`; it
+retains the same beta3 runtime manifest and declarations with updated package
+metadata and installation documentation. Existing GitHub assets are unchanged.
+Install with `deskgap@npm:@ci010/deskgap@0.3.0-beta3` to keep the runtime API name.
 XMCL adds a DeskGap EXE to its existing application releases; its SignPath EXE
 step is currently a placeholder and previews are unsigned/manual-install only.
 The updater continues to reject unsigned executables. No separate update-signing

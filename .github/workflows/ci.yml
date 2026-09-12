@@ -278,12 +278,12 @@ jobs:
         shell: bash
         env:
           NPM_TAG: ${{ inputs.npm_tag }}
-          DESKGAP_NPM_TEST_INSTALL_WHAT: deskgap@${{ inputs.npm_tag }}
+          DESKGAP_NPM_TEST_INSTALL_WHAT: '@ci010/deskgap@${{ inputs.npm_tag }}'
           DESKGAP_NPM_TEST_VERSION_FILE: ${{ github.workspace }}/node/VERSION
         run: |
           version=$(<node/VERSION)
           for attempt in {1..12}; do
-            published=$(npm view "deskgap@$NPM_TAG" version 2>/dev/null || true)
+            published=$(npm view "@ci010/deskgap@$NPM_TAG" version 2>/dev/null || true)
             if [[ "$published" == "$version" ]]; then break; fi
             if [[ "$attempt" == 12 ]]; then echo "npm tag did not resolve to $version"; exit 1; fi
             sleep 10
@@ -293,12 +293,12 @@ jobs:
         if: runner.os == 'Linux'
         env:
           NPM_TAG: ${{ inputs.npm_tag }}
-          DESKGAP_NPM_TEST_INSTALL_WHAT: deskgap@${{ inputs.npm_tag }}
+          DESKGAP_NPM_TEST_INSTALL_WHAT: '@ci010/deskgap@${{ inputs.npm_tag }}'
           DESKGAP_NPM_TEST_VERSION_FILE: ${{ github.workspace }}/node/VERSION
         run: |
           version=$(<node/VERSION)
           for attempt in {1..12}; do
-            published=$(npm view "deskgap@$NPM_TAG" version 2>/dev/null || true)
+            published=$(npm view "@ci010/deskgap@$NPM_TAG" version 2>/dev/null || true)
             if [[ "$published" == "$version" ]]; then break; fi
             if [[ "$attempt" == 12 ]]; then echo "npm tag did not resolve to $version"; exit 1; fi
             sleep 10

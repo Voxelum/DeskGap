@@ -8,6 +8,10 @@ To enable native capabilities while keeping the size down, DeskGap bundles a [No
 
 ## Supported Platforms
 
+**Current preview:** `@ci010/deskgap@0.3.0-beta3` uses Node.js 24 and is
+distributed for Windows x64 only (Windows 10 or newer, with WebView2 installed).
+The table below describes the historical upstream releases, not this preview.
+
 <table>
   <thead>
     <tr>
@@ -44,8 +48,14 @@ To enable native capabilities while keeping the size down, DeskGap bundles a [No
 ### Prebuilt Binaries
 
 ```sh
-npm install --save-dev deskgap
+npm install --save-dev deskgap@npm:@ci010/deskgap@0.3.0-beta3
 ```
+
+The npm alias keeps the application's `require('deskgap')`, TypeScript imports,
+and `deskgap` command unchanged. The unscoped `deskgap` package is maintained
+separately and does not contain this fork's preview runtime.
+The installer downloads the matching [GitHub release](https://github.com/Voxelum/DeskGap/releases/tag/v0.3.0-beta3)
+runtime and checks its SHA256. Node.js 24 is required for installation.
 
 ### API Demos
 The DeskGap API Demos app shows some of the DeskGap features and APIs with interactive scripts.
@@ -110,7 +120,7 @@ app.once('ready', () => {
 ### Installing DeskGap
 
 ```sh
-npm install --save-dev deskgap
+npm install --save-dev deskgap@npm:@ci010/deskgap@0.3.0-beta3
 ```
 
 ### Starting Your App

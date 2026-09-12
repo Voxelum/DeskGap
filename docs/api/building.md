@@ -63,7 +63,7 @@ platforms. The `v0.3.0-beta3` preview uses `windows-x64`, `publish: true`,
 `publish_npm: false`, and `npm_tag: beta`. macOS/Linux assets are not included
 because their native single-instance and protocol-registration APIs are not
 yet implemented. Its `npm.tgz` is a GitHub SDK asset with a Windows runtime,
-not a new npm registry version.
+not a new npm registry version at the time of the GitHub release.
 Prerelease versions remain prereleases even when the npm tag is `latest`.
 Existing GitHub release assets are not overwritten: use a new version rather
 than replacing bytes behind a published URL.
@@ -77,6 +77,20 @@ Each release includes assets for its selected platforms:
 * `DeskGap-<version>-win32-x64.exe`: click-to-run demo application.
 * `DeskGapBootstrap-v<version>-win32-x64.exe`: packaging stub, not a standalone app.
 * `npm.tgz` and `SHA256SUMS`: npm package and checksums of all published artifacts.
+
+### npm SDK publishing
+
+This fork publishes its SDK as `@ci010/deskgap`, not the separately maintained
+unscoped `deskgap` package. Publish previews with `--access=public --tag=beta`.
+Applications should install `deskgap@npm:@ci010/deskgap@0.3.0-beta3` to preserve
+the `deskgap` runtime module name, CLI, and TypeScript imports.
+
+The scoped beta3 SDK reuses the runtime manifest and generated declarations
+from the published GitHub `npm.tgz`, with updated npm package metadata and
+installation documentation. It downloads the same checksum-pinned Windows
+runtime from `v0.3.0-beta3`. The original GitHub SDK tarball, checksums, and tag
+remain unchanged; it is not byte-identical to the scoped npm tarball.
+For later releases, `prepare-npm.sh` packages the scoped name directly.
 
 The runtime ZIP omits the separately published payload and complete click-to-run
 EXE to avoid downloading duplicate copies of the runtime. Consumers such as

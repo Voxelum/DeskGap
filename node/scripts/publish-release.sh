@@ -7,4 +7,4 @@ set -euo pipefail
 npmConfig="$(mktemp)"
 trap 'rm -f "$npmConfig"' EXIT
 printf '//registry.npmjs.org/:_authToken=${NPM_TOKEN}\n' > "$npmConfig"
-NPM_CONFIG_USERCONFIG="$npmConfig" npm publish "$DESKGAP_NPM_TARBALL" --tag="$DESKGAP_AP_NPM_TAG"
+NPM_CONFIG_USERCONFIG="$npmConfig" npm publish "$DESKGAP_NPM_TARBALL" --access=public --tag="$DESKGAP_AP_NPM_TAG"

@@ -1,6 +1,6 @@
 {
   "name": "@ci010/deskgap",
-  "version": "0.3.0-beta3",
+  "version": "0.3.0-beta4",
   "types": "deskgap.d.ts",
   "author": "patr0nus",
   "license": "MIT",

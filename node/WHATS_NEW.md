@@ -1,3 +1,7 @@
+## 0.3.0-beta4 webview2 preview
+
+Windows x64 preview. Preserve form POST navigations in WebView2 instead of replaying them as GET, fixing Microsoft sign-in error AADSTS900561.
+
 ## 0.3.0-beta3 webview2 preview
 
 This prerelease includes **Windows x64 only**. macOS and Linux binaries are not

@@ -279,6 +279,19 @@ namespace DeskGap {
                                         }
                                         uint64_t navigationId = 0;
                                         args->get_NavigationId(&navigationId);
+                                        wil::com_ptr<ICoreWebView2HttpRequestHeaders> requestHeaders;
+                                        BOOL hasBodyHint = FALSE;
+                                        if (SUCCEEDED(args->get_RequestHeaders(&requestHeaders)) && requestHeaders) {
+                                            requestHeaders->Contains(L"Content-Type", &hasBodyHint);
+                                            if (!hasBodyHint) requestHeaders->Contains(L"Content-Length", &hasBodyHint);
+                                        }
+                                        if (hasBodyHint) {
+                                            // Cancelling then Navigate() rewrites form POST as GET (AADSTS900561).
+                                            this->callbacks.didStartNavigation(
+                                                this->pendingNavigationUrl, isRedirected != FALSE
+                                            );
+                                            return S_OK;
+                                        }
                                         args->put_Cancel(TRUE);
                                         policyCancelledNavigationIds.insert(navigationId);
                                         uint64_t requestId = nextPolicyRequestId++;

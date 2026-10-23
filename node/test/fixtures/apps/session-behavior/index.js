@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const os = require('node:os');
 const { app, BrowserWindow, session } = require('deskgap');
 app.on('window-all-closed', () => {});
 
@@ -26,7 +27,7 @@ function close(server) {
 function load(sessionInstance, url) {
     const window = new BrowserWindow({
         show: false,
-        webPreferences: { engine: 'webview2', session: sessionInstance },
+        webPreferences: { ...(process.platform === 'win32' ? { engine: 'webview2' } : {}), session: sessionInstance },
     });
     assert.equal(window.webContents.session, sessionInstance);
     window.loadURL(url);
@@ -56,6 +57,14 @@ app.once('ready', async () => {
         const name = `session-test-${process.pid}-${Date.now()}`;
         const sharedSession = session.fromName(name);
         assert.equal(session.fromName(name), sharedSession);
+        if (process.platform === 'darwin' && Number.parseInt(os.release(), 10) < 23) {
+            assert.throws(() => load(sharedSession, `${origin}/set`), /require macOS 14 or later/);
+            await close(server);
+            clearTimeout(timeout);
+            process.stdout.write('ok (named persistence rejected on macOS <14)');
+            app.exit();
+            return;
+        }
         sharedSession.setUserAgent('DeskGapSessionTest/1.0');
 
         let window = load(sharedSession, `${origin}/set`);
@@ -91,9 +100,14 @@ app.once('ready', async () => {
         await listen(proxyServer);
         const proxySession = session.createEphemeral();
         await proxySession.setProxy({ proxyRules: `http://127.0.0.1:${proxyServer.address().port}` });
+        if (process.platform === 'darwin') {
+            assert.throws(() => load(proxySession, 'http://deskgap-session-proxy.test/path'), /does not support per-session proxy/);
+        }
+        else {
         window = load(proxySession, 'http://deskgap-session-proxy.test/path');
         assert.equal(await nextReport(), 'http://deskgap-session-proxy.test/path');
         window.destroy();
+        }
         await close(proxyServer);
 
         await close(server);

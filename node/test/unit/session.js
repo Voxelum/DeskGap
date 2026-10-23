@@ -46,6 +46,38 @@ test('reuses default, named, and partition sessions with correct persistence', (
     assert.notEqual(session.createEphemeral(), session.createEphemeral());
 });
 
+test('macOS named-session availability uses Darwin version and preserves identity', async () => {
+    // Boundary simulation tests JS validation, not the installed WebKit runtime.
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+    const originalRelease = os.release;
+    try {
+        Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+        os.release = () => '22.6.0';
+        const old = session.fromName('old-macos');
+        assert.throws(() => old.acquire(null), /require macOS 14 or later/);
+        old.setUserAgent('still-mutable'); // Failed acquisition must not lock configuration.
+        assert.equal(session.defaultSession.acquire(null).kind, 'default');
+        assert.equal(session.createEphemeral().acquire(null).kind, 'ephemeral');
+        for (const version of ['23.0.0', '24.6.0', '25.0.0']) {
+            os.release = () => version;
+            const shared = session.fromName(`mac-${version}`);
+            assert.equal(session.fromPartition(`persist:mac-${version}`), shared);
+            const options = shared.acquire(null);
+            assert.equal(options.kind, 'persistent');
+            assert.equal(options.id, `persistent:mac-${version}`);
+            assert.equal(shared.acquire(null).id, options.id);
+            assert.notEqual(session.fromName(`mac-${version}-other`).acquire(null).id, options.id);
+        }
+        const proxy = session.fromName('mac-proxy');
+        await proxy.setProxy({ mode: 'direct' });
+        assert.throws(() => proxy.acquire(null), /does not support per-session proxy/);
+    }
+    finally {
+        os.release = originalRelease;
+        Object.defineProperty(process, 'platform', platform);
+    }
+});
+
 test('freezes user-agent and proxy configuration after first attachment', async () => {
     const value = session.createEphemeral();
     value.setUserAgent('DeskGapSessionTest/1.0');
@@ -229,4 +261,43 @@ test('fetch propagates cancellation', async () => {
     await assert.rejects(pending, error => error.name === 'AbortError');
     await value.closeAllConnections();
     await new Promise(resolve => server.close(resolve));
+});
+
+test('native macOS store identity includes normalized profile and full session id', {
+    skip: process.platform !== 'darwin' ? 'requires Foundation and the macOS compiler' : false,
+}, () => {
+    // Compile the production helper verbatim, without loading WebKit or creating stores.
+    const { execFileSync } = require('node:child_process');
+    const source = fs.readFileSync(path.resolve(__dirname, '../../../lib/src/platform/mac/webview.mm'), 'utf8');
+    const helper = source.split('// BEGIN persistent-store-identity')[1]
+        .split('// END persistent-store-identity')[0].replace(/^.*\n/, '');
+    const input = path.join(outputDirectory, 'store-identity.mm');
+    const executable = path.join(outputDirectory, 'store-identity');
+    fs.writeFileSync(input, `
+#import <Foundation/Foundation.h>
+#import <CommonCrypto/CommonDigest.h>
+#include <string>
+#include <cassert>
+NSString* NSStr(const std::string& s) { return [[NSString alloc] initWithBytes:s.data() length:s.size() encoding:NSUTF8StringEncoding]; }
+std::string CXXStr(NSString* s) { return std::string(s.UTF8String); }
+${helper}
+int main(int argc, char** argv) { @autoreleasepool {
+    std::string root = argv[1];
+    auto same = [](NSUUID* a, NSUUID* b) { return [a isEqual:b]; };
+    auto a = PersistentStoreIdentifier("persistent:main", root + "/app-a/profile");
+    assert(same(a, PersistentStoreIdentifier("persistent:main", root + "/app-a/profile")));
+    assert(same(a, PersistentStoreIdentifier("persistent:main", root + "/app-a/./profile")));
+    assert(!same(a, PersistentStoreIdentifier("persistent:main", root + "/app-b/profile")));
+    assert(!same(a, PersistentStoreIdentifier("persistent:main", root + "/app-a/other-profile")));
+    assert(!same(a, PersistentStoreIdentifier("persistent:other", root + "/app-a/profile")));
+    assert(!same(PersistentStoreIdentifier("bc", root + "/a"), PersistentStoreIdentifier("c", root + "/ab")));
+    assert(!same(PersistentStoreIdentifier("persistent:名字", root), PersistentStoreIdentifier("persistent:名/字", root)));
+    bool rejected = false;
+    @try { PersistentStoreIdentifier("persistent:main", ""); }
+    @catch (NSException* e) { rejected = true; }
+    assert(rejected);
+} }
+`);
+    execFileSync('xcrun', ['clang++', '-std=c++17', '-fobjc-arc', '-framework', 'Foundation', input, '-o', executable]);
+    execFileSync(executable, [outputDirectory]);
 });

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'crypto';
 import { rmSync } from 'fs';
+import { release } from 'os';
 import path = require('path');
 import { app } from './app';
 import { Agent, EnvHttpProxyAgent, fetch as undiciFetch } from 'undici';
@@ -271,8 +272,9 @@ export class Session {
             throw new Error('WinRT WebView does not support explicit sessions, user-agent overrides, proxies, or custom protocols');
         }
         if (process.platform === 'darwin') {
-            if (this.kind === 'persistent') {
-                throw new Error('Named persistent sessions require macOS 14 or later and are unavailable in this DeskGap build');
+            // macOS 14 corresponds to Darwin 23. Native code also checks API availability.
+            if (this.kind === 'persistent' && !(Number.parseInt(release().split('.')[0], 10) >= 23)) {
+                throw new Error('Named persistent sessions require macOS 14 or later');
             }
             if (this.proxyRules_ != null) {
                 throw new Error('WKWebView does not support per-session proxy configuration');

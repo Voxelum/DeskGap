@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+#import <CommonCrypto/CommonDigest.h>
 #include <functional>
 #include <memory>
 #include <string>
@@ -284,8 +285,46 @@ namespace {
 
 namespace DeskGap {
     namespace {
+        // BEGIN persistent-store-identity (also compiled by the headless mapping test)
+        NSUUID* PersistentStoreIdentifier(const std::string& id, const std::string& dataPath) {
+            if (dataPath.empty()) {
+                @throw [NSException exceptionWithName:NSInvalidArgumentException
+                    reason:@"Named persistent sessions require a profile dataPath" userInfo:nil];
+            }
+            NSString* profile = [[NSStr(dataPath) stringByStandardizingPath] stringByResolvingSymlinksInPath];
+            const std::string normalizedPath = CXXStr(profile);
+            // Length-prefix both UTF-8 fields: separators in names/paths cannot alias.
+            const std::string key = "DeskGap.WKWebsiteDataStore.v1:"
+                + std::to_string(normalizedPath.size()) + ":" + normalizedPath
+                + std::to_string(id.size()) + ":" + id;
+            unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+            CC_SHA256(key.data(), static_cast<CC_LONG>(key.size()), digest);
+            digest[6] = (digest[6] & 0x0f) | 0x80;
+            digest[8] = (digest[8] & 0x3f) | 0x80;
+            return [[NSUUID alloc] initWithUUIDBytes:digest];
+        }
+        // END persistent-store-identity
+
         WKWebsiteDataStore* DataStoreForSession(const WebView::SessionOptions& session) {
-            if (session.kind != "ephemeral") return [WKWebsiteDataStore defaultDataStore];
+            // Never silently share the default store for an explicitly isolated session.
+            if (session.proxyRules.has_value()) {
+                @throw [NSException exceptionWithName:NSInvalidArgumentException
+                    reason:@"WKWebView does not support per-session proxy configuration" userInfo:nil];
+            }
+            if (session.kind == "default") return [WKWebsiteDataStore defaultDataStore];
+            if (session.kind == "persistent") {
+                if (@available(macOS 14.0, *)) {
+                    NSUUID* identifier = PersistentStoreIdentifier(session.id, session.dataPath.value_or(""));
+                    // dataPath selects identity only; WebKit controls the physical disk location.
+                    return [WKWebsiteDataStore dataStoreForIdentifier:identifier];
+                }
+                @throw [NSException exceptionWithName:NSInvalidArgumentException
+                    reason:@"Named persistent sessions require macOS 14 or later" userInfo:nil];
+            }
+            if (session.kind != "ephemeral") {
+                @throw [NSException exceptionWithName:NSInvalidArgumentException
+                    reason:@"Unknown session kind" userInfo:nil];
+            }
             static NSMutableDictionary<NSString*, WKWebsiteDataStore*>* stores = [NSMutableDictionary new];
             NSString* key = NSStr(session.id);
             @synchronized (stores) {

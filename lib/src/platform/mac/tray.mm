@@ -4,10 +4,6 @@
 #include "menu_impl.h"
 #include "tray.hpp"
 
-namespace DeskGap {
-    struct Tray::Impl;
-}
-
 @interface DeskGapTrayTarget: NSObject
 @property(nonatomic, assign) DeskGap::Tray::Impl* implementation;
 -(void)handleAction: (id)sender;
